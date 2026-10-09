@@ -59,20 +59,29 @@ struct MusicState {
     double counter = 0.0;      // samples into the current step
     double stepSamples = 0.0;
     float  gain = 0.30f;
-    bool   warm = false;       // false = climb (minor), true = escape (major)
-    bool   thinned = false;    // voices drop away after many incarnations
+    bool   warm = false;       // false = climb theme, true = escape motif
     bool   playing = false;
 };
 
 MusicState g_music;
 
+// The climb theme, and whether it is in the mix at all. It is silenced
+// outright rather than faded whenever the escape motif takes over: the brief
+// is emphatic that the sudden absence of the pushing music is the point.
+ClimbTheme g_climb;
+bool       g_climbOn = true;
+
+// Headroom for the baked track. It is normalised to 0.86, so staying below
+// unity leaves room for the effects on top of it.
+constexpr float kClimbLevel = 0.70f;
+
 float noteFreq(int semitoneFromA4) {
     return 440.0f * std::pow(2.0f, semitoneFromA4 / 12.0f);
 }
 
-// Climb motif (A minor pentatonic, 8 steps) and escape motif (C major), in
-// semitones relative to A4.
-const int kClimbSteps[8]  = { 0, 3, 7, 3, 5, 3, 0, -5 };
+// Escape motif, in semitones relative to A4. The climb theme used to be an
+// eight-step sequencer in this file as well; it is now a real composed track
+// (see assets/CREDITS.md), so only the ending is still synthesised here.
 const int kEscapeSteps[8] = { 3, 7, 10, 15, 10, 7, 5, 3 };
 
 void musicCallback(void* buffer, unsigned int frames) {
@@ -91,16 +100,20 @@ void musicCallback(void* buffer, unsigned int frames) {
         const float t   = static_cast<float>(g_music.counter / g_music.stepSamples); // 0..1
         const float sec = static_cast<float>(g_music.counter / RATE);                // seconds
 
-        const int* pattern = g_music.warm ? kEscapeSteps : kClimbSteps;
-        const float f = noteFreq(pattern[g_music.step]);
-
         float sample = 0.0f;
-        // Lead voice: the amplitude envelope starts at zero so per-note phase
-        // resets never click.
-        sample += 0.55f * tri(f * sec) * env(t, 1.0f, 0.02f, 0.35f);
-        // Bass on the downbeat, dropped once the arrangement is thinned out.
-        if (!g_music.thinned && (g_music.step % 4 == 0)) {
-            sample += 0.5f * sine(noteFreq(pattern[g_music.step] - 24) * sec);
+        if (g_music.warm) {
+            // The escape motif: a plain, warm resolution, heard only once the
+            // player has actually walked away.
+            const float f = noteFreq(kEscapeSteps[g_music.step]);
+            // The amplitude envelope starts at zero so per-note phase resets
+            // never click.
+            sample += 0.55f * tri(f * sec) * env(t, 1.0f, 0.02f, 0.35f);
+            if (g_music.step % 4 == 0) {
+                sample += 0.5f * sine(noteFreq(kEscapeSteps[g_music.step] - 24) * sec);
+            }
+        } else if (g_climbOn) {
+            // The baked climb theme, wearing down as incarnations pile up.
+            sample += g_climb.next() * kClimbLevel;
         }
         sample *= g_music.gain;
 
@@ -242,10 +255,18 @@ void Synth::musicStop() {
     if (ready_ && IsAudioStreamPlaying(music_)) StopAudioStream(music_);
 }
 
-void Synth::musicSetMood(bool warm, bool thinned) {
+void Synth::musicSetMood(bool warm) {
+    // Handing over to the escape motif is the "sudden silence" the brief asks
+    // for, so the climb theme is switched out rather than faded down.
+    if (warm && !g_music.warm) g_climbOn = false;
+    if (!warm && g_music.warm) {
+        g_climbOn = true;
+        g_climb.reset();
+    }
     g_music.warm = warm;
-    g_music.thinned = thinned;
 }
+
+void Synth::musicSetClimb(const core::Arrangement& a) { g_climb.setArrangement(a); }
 
 void Synth::musicVolume(float v) {
     if (!ready_) return;

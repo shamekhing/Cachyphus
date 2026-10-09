@@ -1,5 +1,7 @@
 #pragma once
 
+#include "audio/climb.hpp"
+#include "core/music.hpp"
 #include "raylib.h"
 
 namespace cashyphus::audio {
@@ -25,11 +27,13 @@ public:
     void rollDown();   // the ball heading home
     void birds();      // only heard once you walk away
 
-    // Looping music. `warm` switches to the major key used by the escape
-    // ending; `thinned` drops voices as incarnations pile up.
+    // Looping music. The climb theme is a real CC0 track baked into the binary
+    // and worn down per incarnation; `warm` switches instead to the gentle
+    // escape motif heard only after walking away.
     void musicStart();
     void musicStop();
-    void musicSetMood(bool warm, bool thinned);
+    void musicSetMood(bool warm);
+    void musicSetClimb(const core::Arrangement& a);
     void musicVolume(float v);   // 0..1
 
 private:

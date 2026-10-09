@@ -10,6 +10,7 @@
 #include "audio/synth.hpp"
 #include "core/config.hpp"
 #include "core/game_state.hpp"
+#include "core/music.hpp"
 #include "core/palette.hpp"
 #include "raylib.h"
 #include "render/font.hpp"
@@ -120,9 +121,9 @@ void driveAudio(audio::Synth& synth, const Game& g, AudioCues& cues, const Input
         cues.breathTimer = 0.0f;
     }
 
-    // Music mood + level.
-    synth.musicSetMood(g.phase() == Phase::WalkAway || g.phase() == Phase::Credits,
-                       g.completedLives() >= 20);
+    // Music mood, how worn down the climb theme has become, and level.
+    synth.musicSetMood(g.phase() == Phase::WalkAway || g.phase() == Phase::Credits);
+    synth.musicSetClimb(core::arrangementFor(g.completedLives()));
     synth.musicVolume(musicLevel(g));
 }
 

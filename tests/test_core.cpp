@@ -7,6 +7,7 @@
 
 #include "core/dialogue.hpp"
 #include "core/game_state.hpp"
+#include "core/music.hpp"
 #include "core/palette.hpp"
 #include "core/roll.hpp"
 #include "core/sim.hpp"
@@ -772,6 +773,49 @@ static void test_game_keep_pushing() {
     CHECK(r.livesCompleted >= CHOICE_AFTER_LIVES + 1);
 }
 
+// =============================================================================
+//  Music: the climb theme wears down, and never recovers
+// =============================================================================
+static void test_arrangement_decays() {
+    section("music: arrangement wears down with incarnations");
+
+    const core::Arrangement fresh = core::arrangementFor(0);
+    CHECK(fresh.tone == 1.0f);
+    CHECK(fresh.bits == 16);
+    CHECK(fresh.hold == 1);
+    CHECK(fresh.detune == 0.0f);
+
+    // Every field moves one way and only one way. "Thinner and more
+    // mechanical" has to be monotonic or it reads as a glitch, not as decay.
+    for (int life = 1; life <= core::ARRANGEMENT_SPENT_LIVES + 4; ++life) {
+        const core::Arrangement prev = core::arrangementFor(life - 1);
+        const core::Arrangement cur  = core::arrangementFor(life);
+        CHECK(cur.tone   <= prev.tone);
+        CHECK(cur.bits   <= prev.bits);
+        CHECK(cur.hold   >= prev.hold);
+        CHECK(cur.gain   <= prev.gain);
+        CHECK(cur.detune <= prev.detune);
+    }
+
+    const core::Arrangement spent = core::arrangementFor(core::ARRANGEMENT_SPENT_LIVES);
+    std::printf("  life 0      : tone %.2f  %2d-bit  hold %d  detune %+.0f cents\n",
+                fresh.tone, fresh.bits, fresh.hold, fresh.detune);
+    std::printf("  life %2d     : tone %.2f  %2d-bit  hold %d  detune %+.0f cents\n",
+                core::ARRANGEMENT_SPENT_LIVES, spent.tone, spent.bits, spent.hold, spent.detune);
+
+    // It has to actually arrive somewhere audible, not just twitch.
+    CHECK(spent.tone < fresh.tone * 0.5f);
+    CHECK(spent.bits <= 8);
+    CHECK(spent.hold >= 3);
+
+    // And then it holds there: degrading forever would stop meaning anything.
+    const core::Arrangement beyond = core::arrangementFor(core::ARRANGEMENT_SPENT_LIVES + 50);
+    CHECK(beyond.tone == spent.tone);
+    CHECK(beyond.bits == spent.bits);
+    CHECK(beyond.hold == spent.hold);
+    CHECK(beyond.detune == spent.detune);
+}
+
 int main() {
     std::printf("CASHYPHUS core tests\n====================\n");
     test_stages_and_aging();
@@ -793,6 +837,7 @@ int main() {
     test_ball_rolls_while_running_back();
     test_game_walk_away();
     test_game_keep_pushing();
+    test_arrangement_decays();
 
     std::printf("\n%d/%d checks passed\n", g_checks - g_fail, g_checks);
     return g_fail == 0 ? 0 : 1;

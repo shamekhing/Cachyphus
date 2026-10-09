@@ -130,16 +130,22 @@ src/
     game_state.hpp/.cpp  the CLIMB -> death -> reincarnation loop
     dialogue.hpp/.cpp    the ball's lines, banded by life stage
     palette.hpp/.cpp     warm-youth -> cold-summit colour model
+    music.hpp/.cpp       how worn down the climb theme is, per incarnation
   render/     raylib drawing
     pixelart.hpp/.cpp    char-map + palette -> texture (and CPU images)
     sprites.hpp/.cpp     the character sprite sheets + hunch-on-aging
     scene.hpp/.cpp       hill, parallax, ball, character, speech bubble
     hud.hpp/.cpp         meters, counters, title/choice/ending overlays
+    font.hpp/.cpp        the baked 8px pixel face, and text helpers
+    font_data.hpp        generated glyph table (tools/gen_font.py)
   audio/
-    synth.hpp/.cpp   procedural SFX + a looping sequenced soundtrack
+    synth.hpp/.cpp       procedural SFX + the escape motif
+    climb.hpp/.cpp       plays the baked climb theme, worn down per life
+    music_data.cpp       generated PCM table (tools/gen_music.py)
   main.cpp      window, 320x180 render target, input, fixed-timestep loop
+assets/         the committed source assets and their licences (CREDITS.md)
 tests/          headless test binary
-tools/          sprite-sheet preview dumper
+tools/          offline asset bakers and preview dumps
 web/            Emscripten HTML shell
 ```
 
@@ -232,6 +238,26 @@ PNG on every phase change, so the narrative flow can be inspected at a glance:
 mkdir -p shots && cd shots
 ../build/debug/cashyphus --capture shot
 ```
+
+**Audio decode**   turns any audio raylib understands (OGG, MP3, FLAC, WAV) into
+a plain 16-bit WAV, so an asset can be measured offline with no audio
+toolchain installed:
+
+```bash
+./build/debug/cashyphus_decode track.ogg track.wav
+```
+
+**Asset bakers**   regenerate the two committed asset tables. Neither is needed
+for an ordinary build -- the generated files are committed, which keeps the
+build free of any Python dependency:
+
+```bash
+python3 tools/gen_font.py                # assets/fonts/*.bdf  -> font_data.hpp
+python3 tools/gen_music.py track.wav     # a loop             -> music_data.cpp
+```
+
+Where those assets come from, and under what licences, is in
+**[assets/CREDITS.md](assets/CREDITS.md)**.
 
 ---
 

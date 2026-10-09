@@ -39,6 +39,7 @@ add_library(cashyphus_core STATIC
     src/core/game_state.cpp
     src/core/dialogue.cpp
     src/core/palette.cpp
+    src/core/music.cpp
 )
 target_include_directories(cashyphus_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(cashyphus_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -85,6 +86,8 @@ if(CASHYPHUS_BUILD_GAME)
         src/render/sprites.cpp
         src/render/font.cpp
         src/audio/synth.cpp
+        src/audio/climb.cpp
+        src/audio/music_data.cpp
     )
     target_link_libraries(cashyphus PRIVATE cashyphus_core ${CASHYPHUS_RAYLIB})
     target_compile_options(cashyphus PRIVATE -Wall -Wextra)
@@ -113,4 +116,15 @@ if(CASHYPHUS_DUMP_SPRITES)
     )
     target_link_libraries(cashyphus_dump_sprites PRIVATE cashyphus_core ${CASHYPHUS_RAYLIB})
     target_compile_options(cashyphus_dump_sprites PRIVATE -Wall -Wextra)
+endif()
+
+# ---------------------------------------------------------------------------
+#  Audio decoder: turns any audio raylib understands (OGG/MP3/FLAC/WAV) into a
+#  plain 16-bit WAV so an asset can be measured and auditioned offline without
+#  an audio toolchain. Authoring aid only; never shipped.
+# ---------------------------------------------------------------------------
+if(CASHYPHUS_BUILD_GAME)
+    add_executable(cashyphus_decode tools/decode_audio.cpp)
+    target_link_libraries(cashyphus_decode PRIVATE ${CASHYPHUS_RAYLIB})
+    target_compile_options(cashyphus_decode PRIVATE -Wall -Wextra)
 endif()
