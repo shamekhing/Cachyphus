@@ -1,0 +1,41 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 20, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "debug",
+      "displayName": "Debug (native, with tests)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CASHYPHUS_BUILD_GAME": "ON",
+        "CASHYPHUS_BUILD_TESTS": "ON",
+        "CASHYPHUS_DUMP_SPRITES": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release (native)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CASHYPHUS_BUILD_GAME": "ON",
+        "CASHYPHUS_BUILD_TESTS": "ON",
+        "CASHYPHUS_DUMP_SPRITES": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "release", "configurePreset": "release" }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

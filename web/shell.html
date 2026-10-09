@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>CASHYPHUS</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #0b0a0e;
+      overflow: hidden;
+      font-family: monospace;
+    }
+    canvas.emscripten {
+      display: block;
+      margin: 0 auto;
+      border: 0;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      background: #0b0a0e;
+    }
+    #spinner {
+      margin: auto;
+      color: #e8e4d8;
+      text-align: center;
+      padding-top: 30vh;
+      letter-spacing: 0.3em;
+    }
+    #controls {
+      position: fixed;
+      bottom: 8px;
+      width: 100%;
+      text-align: center;
+      color: #8a877e;
+      font-size: 12px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="spinner">LOADING CASHYPHUS...</div>
+  <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+  <div id="controls">SPACE / tap = push &nbsp;&middot;&nbsp; SHIFT = brace &nbsp;&middot;&nbsp; F = fullscreen</div>
+  <script>
+    // This must be defined BEFORE the loader below, so the runtime picks it up.
+    var Module = {
+      onRuntimeInitialized: function () {
+        var s = document.getElementById('spinner');
+        if (s) s.style.display = 'none';
+      }
+    };
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'f' || e.key === 'F') {
+        var c = document.getElementById('canvas');
+        if (!document.fullscreenElement) { if (c.requestFullscreen) c.requestFullscreen(); }
+        else if (document.exitFullscreen) { document.exitFullscreen(); }
+      }
+    });
+  </script>
+  {{{ SCRIPT }}}
+</body>
+</html>
