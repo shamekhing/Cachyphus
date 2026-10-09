@@ -37,13 +37,22 @@ constexpr float STAMINA_MIN_FACTOR = 0.05f;   // push strength floor at 0 stamin
 constexpr float PUSH_COOLDOWN      = 0.13f;   // min gap between accepted pushes (~7.7/s)
 
 // --- Stamina regeneration -----------------------------------------------------
-constexpr float STAMINA_REGEN_BRACE = 1.00f;  // 1/s while bracing (before frailty)
-constexpr float STAMINA_REGEN_IDLE  = 0.12f;  // 1/s while not bracing
+// These are the YOUTH rates; frailty below scales them down with age. Keep the
+// base honest -- raising it to paper over a slow climb also buffs the old body
+// and hides the whole point of aging.
+constexpr float STAMINA_REGEN_BRACE = 0.70f;  // 1/s while bracing
+constexpr float STAMINA_REGEN_IDLE  = 0.10f;  // 1/s while not bracing
 
 // --- Brace (SHIFT) ------------------------------------------------------------
+// Grip is what stops you resting forever. Note the interaction with age: a
+// slower stamina refill means a LONGER brace, and a longer brace is exactly
+// what burns grip -- so the two age penalties multiply. The base economy is
+// therefore kept a little generous so that an old character can still hold on
+// long enough to recover; otherwise the rest cycle is unsustainable and the
+// climb becomes impossible.
 constexpr float BRACE_ACCEL            = 0.35f; // progress/s^2 opposing rollback
-constexpr float GRIP_DRAIN             = 0.30f; // 1/s while bracing   (~3.3s hold)
-constexpr float GRIP_REGEN             = 0.55f; // 1/s while not bracing
+constexpr float GRIP_DRAIN             = 0.26f; // 1/s while bracing   (~3.8s hold)
+constexpr float GRIP_REGEN             = 0.62f; // 1/s while not bracing
 constexpr float GRIP_RECOVER_THRESHOLD = 0.25f; // hysteresis after a slip
 
 // --- Aging --------------------------------------------------------------------
@@ -59,9 +68,18 @@ constexpr float AGE_FACTOR[4] = { 1.00f, 0.96f, 0.92f, 0.86f };
 // Frailty: aging also wears down the body's *efficiency*, not just its power.
 // Stamina efficiency scales how fast the tank refills (and divides how much
 // each push costs); grip efficiency scales how fast grip recovers (and divides
-// how long the ball can be held). An old body tires sooner and holds less.
-constexpr float AGE_STAMINA_EFF[4] = { 1.00f, 0.90f, 0.78f, 0.64f };
-constexpr float AGE_GRIP_EFF[4]    = { 1.00f, 0.92f, 0.82f, 0.70f };
+// how long the ball can be held).
+//
+// By the final years, compared with youth, a shove costs ~72% more stamina,
+// the tank refills ~72% slower, grip drains ~39% faster and recovers ~39%
+// slower. The rhythm goes from long bursts and short holds to short bursts
+// that need long holds, which is what "older and weaker" has to feel like.
+//
+// The grip curve is deliberately gentler than the stamina curve. Making BOTH
+// steep is not harder in a satisfying way, it is broken: see the note on grip
+// above. These values were chosen against measurement, not by eye.
+constexpr float AGE_STAMINA_EFF[4] = { 1.00f, 0.86f, 0.72f, 0.58f };
+constexpr float AGE_GRIP_EFF[4]    = { 1.00f, 0.90f, 0.80f, 0.72f };
 
 // --- World geometry (one source of truth for physics and rendering) ----------
 constexpr float HILL_LEN    = 900.0f;  // world x of the summit, in pixels

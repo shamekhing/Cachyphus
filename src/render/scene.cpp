@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "core/config.hpp"
+#include "core/roll.hpp"
 #include "render/pixelart.hpp"
 
 namespace cashyphus::scene {
@@ -230,8 +231,6 @@ void drawBall(float cx, float cy, float r, float spinDeg, BallMood mood,
     const Color band   = lerpColor(toColor(pal.ballBand), toColor(pal.outline), 0.6f);
     const Color shadow = toColor(pal.ballShadow);
 
-    const float spin = spinDeg * 3.14159265f / 180.0f;
-    const float cs = std::cos(spin), sn = std::sin(spin);
     const int R = static_cast<int>(r);
     const int icx = static_cast<int>(cx), icy = static_cast<int>(cy);
 
@@ -248,9 +247,11 @@ void drawBall(float cx, float cy, float r, float spinDeg, BallMood mood,
             // Sample the ball's own surface, which turns with the roll. The
             // banknote seams, coins and the "$" all live in this rotating space,
             // so their movement across the ball is what reads as ROLLING rather
-            // than sliding.
-            const float rx = dx * cs - dy * sn;
-            const float ry = dx * sn + dy * cs;
+            // than sliding. The convention (positive spin = clockwise on
+            // screen) lives in core/roll.hpp and is covered by tests.
+            float rx = 0.0f, ry = 0.0f;
+            rollSurface(static_cast<float>(dx), static_cast<float>(dy),
+                        spinDeg, rx, ry);
 
             if ((static_cast<int>(std::floor(rx / 4.0f)) & 1) == 0) {
                 c = lerpColor(c, dark, 0.45f);        // banknote seam

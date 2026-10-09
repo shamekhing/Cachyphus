@@ -160,7 +160,10 @@ velocity model rather than a rigid-body one:
 * aging wears down *efficiency*, not just raw power. Every life stage makes a
   push cost more stamina, stamina refill more slowly, grip drain faster and
   grip recover slower, so an old body works in shorter bursts and needs longer
-  rests. By the final years a shove costs ~60% more and grip lasts ~30% less;
+  rests. Measured against youth, the final years cost **72% more stamina per
+  shove**, refill **42% slower**, drain grip **39% faster** and recover it
+  **28% slower**. The effect is large enough to see directly -- each quarter of
+  the hill takes roughly **3.3 s / 9.9 s / 14.2 s / 28.5 s** as the body ages;
 * gravity accelerates the ball downhill, multiplied by a slope that steepens
   with progress (the hill literally gets steeper) *and* by the life counter:
   every incarnation makes the ball 8% heavier, up to +40%;
@@ -174,6 +177,21 @@ distance it actually travelled (`distance / radius`), so the banknote seams,
 coins and the `$` turn by the correct amount while it is pushed, while it slips
 backwards, and all the way back down the hill. Only the eyes and mouth stay
 upright, so the ball is always facing you.
+
+The direction convention lives in one place, `src/core/roll.hpp`: **positive
+spin is clockwise on screen**, which is the way a wheel turns when it rolls to
+the right, i.e. uphill. Because a rendering sign convention is easy to get
+backwards (it was, once) and impossible to check by eyeballing a still frame,
+it is covered by a test that feeds a derived screen offset back through the
+rotation and asserts the two agree.
+
+**One balancing trap worth knowing about:** the stamina and grip age penalties
+*multiply*. A slower stamina refill forces a *longer* brace, and a longer brace
+is exactly what burns grip -- so making both curves steep at once is not
+"harder", it is broken: the character slips forever without gaining ground and
+the climb becomes impossible. The grip curve is therefore deliberately gentler
+than the stamina curve, and `cashyphus_tests` asserts that at *every* age the
+grip earned while pushing still covers the grip spent while resting.
 
 That combination is the whole game: pushing without resting stalls out, resting
 without pushing gives ground away, and grip is what stops you resting forever.

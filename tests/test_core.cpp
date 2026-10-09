@@ -8,6 +8,7 @@
 #include "core/dialogue.hpp"
 #include "core/game_state.hpp"
 #include "core/palette.hpp"
+#include "core/roll.hpp"
 #include "core/sim.hpp"
 
 using namespace cashyphus;
@@ -437,6 +438,131 @@ static void test_aging_degrades_stamina_and_grip() {
     CHECK(agedGrip > youngGrip * 1.2f);
 }
 
+// The behavioural version of the sustainability check: put the simulation
+// itself into the final years and confirm the climb still advances rather than
+// stalling into a slip loop. (When both age curves were briefly too steep, this
+// is exactly what failed: a life ran past the 900 s cap without finishing.)
+static void test_old_age_can_still_climb() {
+    section("sim: the final years can still gain ground");
+
+    Sim s;
+    s.reset();
+    s.setLife(1);
+    pumpTo(s, 0.80f, 60 * 300);
+    CHECK(s.stage() == Stage::Final);
+
+    const float before = s.state().progress;
+    bool resting = false;
+    for (int f = 0; f < 60 * 60; ++f) {          // one minute of steady play
+        const SimState& st = s.state();
+        if (st.stamina < 0.15f) resting = true;
+        if (st.stamina > 0.70f) resting = false;
+        SimInput in;
+        in.active = true;
+        in.brace  = resting;
+        in.push   = !resting && (f % 10 == 0);
+        s.step(in, FIXED_DT);
+    }
+
+    const float gained = s.state().progress - before;
+    std::printf("  final years gained %.3f of the hill in 60 s\n", static_cast<double>(gained));
+    CHECK(gained > 0.10f);                       // must not dead-end
+}
+
+// =============================================================================
+//  Roll direction. Positive spin means CLOCKWISE on screen, which is the way a
+//  ball turns when it rolls to the right, i.e. uphill. The sign was previously
+//  inverted, so the ball span anticlockwise while climbing -- this pins it.
+// =============================================================================
+static void test_ball_roll_direction() {
+    section("roll: uphill turns clockwise, downhill anticlockwise");
+
+    // The "$" is stamped at the BOTTOM of the ball: surface coords (0, +12).
+    const float fx = 0.0f, fy = 12.0f;
+    const float rad = 0.01745329252f;
+
+    // Where a surface point at (fx,fy) appears on screen, as an offset from the
+    // ball's centre. This is the inverse of rollSurface(), derived from the
+    // physical requirement, so it is an independent check of the convention
+    // rather than a restatement of the implementation.
+    auto screenX = [&](float spinDeg) {
+        return fx * std::cos(spinDeg * rad) - fy * std::sin(spinDeg * rad);
+    };
+    auto screenY = [&](float spinDeg) {
+        return fx * std::sin(spinDeg * rad) + fy * std::cos(spinDeg * rad);
+    };
+
+    // At rest the "$" hangs directly below the centre.
+    CHECK(std::fabs(screenX(0.0f)) < 0.01f);
+    CHECK(std::fabs(screenY(0.0f) - fy) < 0.01f);
+
+    // Rolling UPHILL is a positive spin (clockwise). A point at the bottom of a
+    // wheel rolling to the right must travel BACKWARDS, i.e. to the left.
+    const float upX = screenX(90.0f);
+    std::printf("  uphill  : the '$' at the bottom moves to x=%+.0f  (left = rolling right)\n", upX);
+    CHECK(upX < -1.0f);
+    CHECK(std::fabs(screenY(90.0f)) < 1.0f);
+
+    // Rolling back DOWN is a negative spin (anticlockwise), so it travels
+    // forward, to the right. Getting this backwards is the bug that was fixed.
+    const float downX = screenX(-90.0f);
+    std::printf("  downhill: the '$' at the bottom moves to x=%+.0f  (right = rolling left)\n", downX);
+    CHECK(downX > 1.0f);
+
+    // A half turn puts it at the top of the ball.
+    CHECK(std::fabs(screenY(180.0f) + fy) < 0.01f);
+
+    // Tie the test to the real implementation: feeding our derived screen
+    // offset back through rollSurface() must return the original surface point.
+    // If the sign inside rollSurface() ever flips, this reverses and fails.
+    for (float spin : { -120.0f, -37.0f, 0.0f, 45.0f, 210.0f }) {
+        float rx = 0.0f, ry = 0.0f;
+        rollSurface(screenX(spin), screenY(spin), spin, rx, ry);
+        CHECK(std::fabs(rx - fx) < 0.01f);
+        CHECK(std::fabs(ry - fy) < 0.01f);
+    }
+}
+
+// =============================================================================
+//  Aging must be punishing, but it must never make a life impossible.
+// =============================================================================
+static void test_frailty_is_meaningful_but_survivable() {
+    section("sim: aging is punishing, but never a dead end");
+
+    // Steep and monotonic: every stage is weaker than the one before.
+    for (int i = 1; i < 4; ++i) {
+        CHECK(AGE_STAMINA_EFF[i] < AGE_STAMINA_EFF[i - 1]);
+        CHECK(AGE_GRIP_EFF[i]    < AGE_GRIP_EFF[i - 1]);
+    }
+    const int last = 3;
+    CHECK(1.0f / AGE_STAMINA_EFF[last] >= 1.5f);   // a shove costs >=50% more
+    CHECK(AGE_STAMINA_EFF[last] <= 0.65f);         // recharge >=35% slower
+    CHECK(1.0f / AGE_GRIP_EFF[last] >= 1.25f);     // grip drains >=25% faster
+    CHECK(AGE_GRIP_EFF[last] <= 0.80f);            // grip recovers >=20% slower
+}
+
+// The rest cycle must stay sustainable at EVERY age. Choosing both age curves
+// steeply made the final years dead-end: the slower stamina refill forces a
+// longer brace, and the longer brace burns more grip than a burst can earn
+// back, so the character slips forever and never gains ground. These numbers
+// are a design invariant, checked here so that can never be tuned back in.
+static void test_every_age_can_still_rest() {
+    section("sim: every age can complete a rest cycle");
+
+    for (int i = 0; i < 4; ++i) {
+        const float se = AGE_STAMINA_EFF[i];
+        const float ge = AGE_GRIP_EFF[i];
+        const float burst  = 0.80f / (6.0f * PUSH_COST / se - STAMINA_REGEN_IDLE * se);
+        const float rest   = 0.55f / (STAMINA_REGEN_BRACE * se);
+        const float spent  = (GRIP_DRAIN / ge) * rest;
+        const float earned = GRIP_REGEN * ge * burst;
+        std::printf("  stage %d: burst %.2fs, rest %.2fs, grip spent %.2f vs earned %.2f\n",
+                    i, static_cast<double>(burst), static_cast<double>(rest),
+                    static_cast<double>(spent), static_cast<double>(earned));
+        CHECK(earned > spent);
+    }
+}
+
 // =============================================================================
 //  Dialogue
 // =============================================================================
@@ -658,6 +784,10 @@ int main() {
     test_mashing_is_not_a_strategy();
     test_later_lives_are_heavier();
     test_aging_degrades_stamina_and_grip();
+    test_old_age_can_still_climb();
+    test_frailty_is_meaningful_but_survivable();
+    test_every_age_can_still_rest();
+    test_ball_roll_direction();
     test_dialogue();
     test_palette();
     test_ball_rolls_while_running_back();

@@ -232,6 +232,11 @@ void Game::update(const Input& in, float dt) {
     // amount while being pushed, while slipping backwards, and all the way back
     // down the hill. Measuring displacement rather than velocity also means the
     // roll stays correct while the ball is coasting or being held.
+    //
+    // Sign convention (see core/roll.hpp): positive spin is CLOCKWISE on
+    // screen, which is what a ball rolling to the right -- i.e. uphill -- does.
+    // Climbing therefore adds to the spin and running back down subtracts from
+    // it, so both directions turn the right way.
     const float progress = ballProgress();
     ballSpin_ += (progress - lastProgress_) * ROLL_DEG_PER_PROGRESS;
     lastProgress_ = progress;
