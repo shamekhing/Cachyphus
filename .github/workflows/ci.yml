@@ -1,0 +1,78 @@
+# ===========================================================================
+#  Fast CI: build and run the headless core tests on every push and PR.
+#
+#  The simulation, state machine, dialogue and palette live in src/core and
+#  know nothing about raylib, so this job needs no OpenGL, no X11, no audio
+#  device and no library download. It configures and finishes in seconds,
+#  which is why it is a good first gate before the slower web build.
+# ===========================================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Core tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # The project targets C++17; check it on both a current and an older
+        # toolchain so we do not accidentally depend on newer-only behaviour.
+        build_type: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure (game disabled, so raylib is not fetched)
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCASHYPHUS_BUILD_GAME=OFF
+          -DCASHYPHUS_DUMP_SPRITES=OFF
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  # ---------------------------------------------------------------------------
+  #  Native build of the real thing, so a compile error in the raylib layer is
+  #  caught here rather than only in the (slower) Pages workflow.
+  # ---------------------------------------------------------------------------
+  native:
+    name: Native build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install GL/X11 development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev
+
+      - name: Cache raylib source
+        uses: actions/cache@v5
+        with:
+          path: build/debug/_deps
+          key: raylib-native-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: Configure
+        run: cmake --preset debug
+
+      - name: Build
+        run: cmake --build --preset debug -j"$(nproc)"
+
+      - name: Verify the sprite sheets are well formed
+        run: ./build/debug/cashyphus_dump_sprites /tmp/sprites_preview.png

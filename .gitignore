@@ -47,6 +47,9 @@ compile_commands.json
 /cashyphus.data
 /cashyphus.worker.js
 
+# --- GitHub Pages staging (created by .github/workflows/pages.yml) ----------
+/dist/
+
 # --- Development tool output -----------------------------------------------
 # cashyphus_dump_sprites writes sprite-sheet previews and
 # cashyphus --capture writes a PNG per phase.

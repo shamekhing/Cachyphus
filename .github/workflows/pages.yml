@@ -1,0 +1,130 @@
+# ===========================================================================
+#  Build CASHYPHUS for the web (WebAssembly) and publish it to GitHub Pages.
+#
+#  One-time setup in the repository: Settings -> Pages -> Build and deployment
+#  -> Source: "GitHub Actions". After that every push to main republishes the
+#  game at https://<owner>.github.io/<repo>/
+#
+#  Because the game generates all of its sprites and audio in code, there are
+#  no asset files to preload: the whole site is just three files plus a
+#  .nojekyll marker.
+# ===========================================================================
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  # Lets you publish on demand from the Actions tab.
+  workflow_dispatch:
+
+# Publishing to Pages needs an OIDC token and write access to Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two Pages deployments at once, and let an in-flight one finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # Pinned for reproducibility: this is the Emscripten version the game has
+  # actually been built and run with locally.
+  EM_VERSION: 3.1.69
+  RAYLIB_TAG: "5.5"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  #  The logic tests need no raylib, no GL and no audio device, so this job is
+  #  a few seconds and gates the deploy before we bother compiling to wasm.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure (tests only, no raylib)
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCASHYPHUS_BUILD_GAME=OFF
+          -DCASHYPHUS_DUMP_SPRITES=OFF
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  # ---------------------------------------------------------------------------
+  #  Cross-compile the game to WebAssembly with Emscripten.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build web
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      # FetchContent clones all of raylib before it can be compiled; caching it
+      # turns a multi-minute clone into a restore on every run after the first.
+      - name: Cache raylib source
+        uses: actions/cache@v5
+        with:
+          path: build-web/_deps
+          key: raylib-wasm-${{ env.EM_VERSION }}-${{ env.RAYLIB_TAG }}-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: Set up Emscripten
+        uses: emscripten-core/setup-emsdk@v16
+        with:
+          version: ${{ env.EM_VERSION }}
+
+      - name: Configure
+        run: >
+          emcmake cmake -S . -B build-web
+          -DCMAKE_BUILD_TYPE=Release
+          -DRAYLIB_TAG=${{ env.RAYLIB_TAG }}
+          -DCASHYPHUS_BUILD_TESTS=OFF
+          -DCASHYPHUS_DUMP_SPRITES=OFF
+
+      - name: Build
+        run: cmake --build build-web -j"$(nproc)"
+
+      # Only the three runtime files belong on the site -- build-web also holds
+      # the whole raylib checkout and hundreds of MB of object files.
+      - name: Stage the site
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # Pages serves index.html at the site root; the HTML loads its
+          # sibling cashyphus.js by relative path, so only the name changes.
+          cp build-web/cashyphus.html dist/index.html
+          cp build-web/cashyphus.js  dist/
+          cp build-web/cashyphus.wasm dist/
+          # Skip Jekyll so nothing gets rewritten or excluded.
+          touch dist/.nojekyll
+          du -sh dist
+
+      - name: Upload the Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  # ---------------------------------------------------------------------------
+  #  Hand the artifact to GitHub Pages.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

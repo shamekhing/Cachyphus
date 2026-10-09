@@ -1,5 +1,9 @@
 # CASHYPHUS
 
+[![CI](https://github.com/shamekhing/Cachyphus/actions/workflows/ci.yml/badge.svg)](https://github.com/shamekhing/Cachyphus/actions/workflows/ci.yml)
+[![Pages](https://github.com/shamekhing/Cachyphus/actions/workflows/pages.yml/badge.svg)](https://github.com/shamekhing/Cachyphus/actions/workflows/pages.yml)
+[![Play in your browser](https://img.shields.io/badge/play-in%20your%20browser-brightgreen)](https://shamekhing.github.io/Cachyphus/)
+
 **One hill. One lifetime. One more push.**
 
 A pixel-art allegory: a person spends their whole life pushing a giant, talking
@@ -69,6 +73,30 @@ python3 -m http.server -d build-web 8000   # then open cashyphus.html
 
 Because there are no asset files there is nothing to preload, so the whole game is
 `cashyphus.html` + `cashyphus.js` + `cashyphus.wasm`, about 580 KB in total.
+
+### Publishing a playable page (GitHub Pages)
+
+`.github/workflows/pages.yml` builds the WebAssembly version and publishes it as
+a static page. On a push to `main` it:
+
+1. runs the headless tests (a few seconds, no raylib needed) as a gate;
+2. cross-compiles the game with Emscripten;
+3. stages just the three runtime files plus a `.nojekyll` marker;
+4. uploads and deploys them to GitHub Pages.
+
+**One-time setup:** in the repository, go to *Settings → Pages → Build and
+deployment* and set **Source** to **GitHub Actions**. After that, every push to
+`main` republishes the game at:
+
+```
+https://<owner>.github.io/<repo>/
+```
+
+You can also trigger it by hand from the *Actions* tab (`workflow_dispatch`).
+
+`.github/workflows/ci.yml` is the separate fast feedback workflow: it builds and
+runs the core tests in both Debug and Release on every push and pull request,
+plus a full native build to catch compile errors in the raylib layer.
 
 ---
 
