@@ -7,6 +7,8 @@
 #   ./run.sh --fresh      wipe the build tree first (use after CMake changes)
 #   ./run.sh --tests      build and run the headless test suite, don't play
 #   ./run.sh --web        build the WebAssembly version and serve it locally
+#   ./run.sh --smoke      build it, then load it in headless Chromium and fail
+#                         if the page has errors or the canvas never draws
 #   ./run.sh --port 9000  serve --web on another port
 #
 # Nothing needs installing beyond a compiler, CMake and OpenGL headers: raylib
@@ -33,6 +35,7 @@ while [ $# -gt 0 ]; do
     --fresh)   FRESH=1 ;;
     --tests)   CMD=tests ;;
     --web)     CMD=web ;;
+    --smoke)   CMD=smoke ;;
     --port)    PORT="${2:?--port needs a number}"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "run.sh: unknown option '$1'" >&2; usage >&2; exit 2 ;;
@@ -46,7 +49,7 @@ if [ "$FRESH" = 1 ]; then
 fi
 
 # --- build -------------------------------------------------------------------
-if [ "$CMD" = web ]; then
+if [ "$CMD" = web ] || [ "$CMD" = smoke ]; then
   command -v emcmake >/dev/null 2>&1 || {
     echo "run.sh: emcmake not found. Install the Emscripten SDK and source its env." >&2
     exit 1
@@ -70,18 +73,20 @@ case "$CMD" in
     ;;
 
   web)
-    # Pages serves index.html at the site root and the HTML loads its sibling
-    # cashyphus.js by relative path, so staging is exactly a rename.
-    SITE=build-web/site
-    mkdir -p "$SITE"
-    cp build-web/cashyphus.html "$SITE/index.html"
-    cp build-web/cashyphus.js   "$SITE/"
-    cp build-web/cashyphus.wasm "$SITE/"
+    # Content-hash the js/wasm so a cached page can never pair them with the
+    # wrong copy of each other.
+    python3 tools/stage_site.py build-web build-web/site
     echo
     echo "==> http://localhost:$PORT/     (Ctrl-C to stop)"
     echo "    Open it over http, not file:// -- the browser will not"
     echo "    instantiate the wasm from a file URL."
-    cd "$SITE" && exec python3 -m http.server "$PORT"
+    cd build-web/site && exec python3 -m http.server "$PORT"
+    ;;
+
+  smoke)
+    python3 tools/stage_site.py build-web build-web/site
+    echo "==> running the browser smoke test"
+    node tools/smoke_web.js build-web/site
     ;;
 
   run)

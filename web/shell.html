@@ -195,6 +195,11 @@
       showError('Load failed: ' + (r && r.message ? r.message : r));
     });
 
+    // Name of the wasm this page is allowed to load. The staging step
+    // rewrites this to a content-hashed name, which is what stops a cached
+    // cashyphus.js from being paired with a wasm it was never built against.
+    var CASHYPHUS_WASM = 'cashyphus.wasm';
+
     // Defined before the loader script below so the runtime picks it up.
     //
     // `canvas` is not optional: Emscripten's GLFW init does
@@ -202,6 +207,11 @@
     // never runs, and the page shows a black canvas with no error anywhere.
     var Module = {
       canvas: document.getElementById('canvas'),
+      locateFile: function (path, prefix) {
+        var p = prefix || '';
+        if (path === 'cashyphus.wasm') return p + CASHYPHUS_WASM;
+        return p + path;
+      },
       onRuntimeInitialized: function () {
         ready = true;
         if (statusEl) statusEl.textContent = 'ready';

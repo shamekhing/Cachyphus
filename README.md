@@ -50,6 +50,8 @@ X11/OpenGL development packages.
 ./run.sh --fresh      # wipe the build tree first (after CMake changes)
 ./run.sh --tests      # build and run the headless tests, don't play
 ./run.sh --web        # build the WebAssembly version and serve it on :8000
+./run.sh --smoke      # build it, then load it in headless Chromium and fail
+                      # if the page errors or the canvas never draws
 ```
 
 ### Linux (native)
@@ -102,6 +104,24 @@ quietly.
 > keeping the plain loop for native. The game state lives in a namespace-scope
 > `App`, not in `main`'s locals, because that call unwinds the stack rather than
 > returning.
+>
+> **Two more things a wasm page needs.** `Module.canvas` must be set explicitly,
+> or Emscripten's GLFW init throws `reading 'addEventListener' of undefined` and
+> `main()` never runs -- a black canvas with no error visible anywhere. And
+> `-sASYNCIFY` is required, because raylib's web audio spins on
+> `emscripten_sleep()` while the Web Audio context initialises; miniaudio says so
+> in a comment right beside the call.
+>
+> Those fixes only survive publishing if the page and the wasm cannot drift apart.
+> `tools/stage_site.py` publishes `cashyphus.<hash>.js` and
+> `cashyphus.<hash>.wasm` and rewrites the references, so a browser still holding
+> a copy from an earlier deploy can never pair the wrong pair together -- which is
+> what produced `...compile your program with async support` in production.
+>
+> `tools/smoke_web.js` then loads the staged site in headless Chromium and fails
+> on any console error, any unhandled rejection, or a canvas that never draws.
+> The Pages workflow runs it before deploying, so a blank page cannot be
+> published in the first place.
 
 ### Publishing a playable page (GitHub Pages)
 

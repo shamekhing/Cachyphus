@@ -99,15 +99,35 @@ jobs:
       - name: Stage the site
         run: |
           set -euo pipefail
-          mkdir -p dist
-          # Pages serves index.html at the site root; the HTML loads its
-          # sibling cashyphus.js by relative path, so only the name changes.
-          cp build-web/cashyphus.html dist/index.html
-          cp build-web/cashyphus.js  dist/
-          cp build-web/cashyphus.wasm dist/
-          # Skip Jekyll so nothing gets rewritten or excluded.
-          touch dist/.nojekyll
+          # Content-hashes the js and wasm and rewrites the references in the
+          # html, so a cached page can never pair a stale JS with a wasm built
+          # against a different one.
+          python3 tools/stage_site.py build-web dist
           du -sh dist
+
+      # A wasm page that throws on load looks exactly like a blank page to the
+      # player, and nothing else in this workflow would notice: the build
+      # succeeds and the deploy succeeds. So load the staged site in a real
+      # browser and fail before publishing if it reports any error, or if the
+      # canvas never draws.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Cache the headless browser
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-1.64.0
+
+      - name: Install the browser for the smoke test
+        run: |
+          npm i --no-save playwright@1.64.0
+          npx playwright install --with-deps chromium
+
+      - name: Smoke test the staged page
+        run: node tools/smoke_web.js dist
 
       - name: Upload the Pages artifact
         uses: actions/upload-pages-artifact@v5
