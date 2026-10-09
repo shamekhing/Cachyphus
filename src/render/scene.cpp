@@ -184,6 +184,42 @@ void drawEyes(int cx, int ey, BallMood mood, const Palette& pal) {
     }
 }
 
+// Distance from a point to a line segment, in the ball's surface space.
+bool nearSegment(float px, float py, float x1, float y1, float x2, float y2, float w) {
+    const float dx = x2 - x1, dy = y2 - y1;
+    const float len2 = dx * dx + dy * dy;
+    float t = len2 > 0.0f ? ((px - x1) * dx + (py - y1) * dy) / len2 : 0.0f;
+    t = clampf(t, 0.0f, 1.0f);
+    const float ddx = px - (x1 + t * dx);
+    const float ddy = py - (y1 + t * dy);
+    return ddx * ddx + ddy * ddy <= w * w;
+}
+
+// The "$" stamped on the ball's surface, sitting below the face. It rotates
+// with the ball, which is the main thing that sells the roll.
+bool dollarGlyph(float x, float y) {
+    const float gy = y - 12.0f;
+    return nearSegment(x, gy,  0.0f, -7.0f,  0.0f,  7.0f, 1.1f) ||  // stem
+           nearSegment(x, gy, -4.0f, -5.0f,  4.0f, -5.0f, 1.1f) ||  // top bar
+           nearSegment(x, gy, -4.0f,  0.0f,  4.0f,  0.0f, 1.1f) ||  // waist
+           nearSegment(x, gy, -4.0f,  5.0f,  4.0f,  5.0f, 1.1f) ||  // bottom bar
+           nearSegment(x, gy, -4.0f, -5.0f, -4.0f, -1.0f, 1.1f) ||  // upper hook
+           nearSegment(x, gy,  4.0f,  1.0f,  4.0f,  5.0f, 1.1f);    // lower hook
+}
+
+// A few coins embedded in the surface, so the rotation is unmistakable.
+bool coinHit(float x, float y) {
+    static const float kCoins[4][2] = {
+        { -15.0f,   6.0f }, { 14.0f,   9.0f },
+        {   7.0f, -17.0f }, { -12.0f, -13.0f },
+    };
+    for (const auto& c : kCoins) {
+        const float dx = x - c[0], dy = y - c[1];
+        if (dx * dx + dy * dy <= 6.25f) return true;   // ~2.5 px radius
+    }
+    return false;
+}
+
 void drawBall(float cx, float cy, float r, float spinDeg, BallMood mood,
               const Palette& pal, bool topHat, bool sunglasses) {
     const Color light  = toColor(pal.ballLight);
@@ -209,11 +245,23 @@ void drawBall(float cx, float cy, float r, float spinDeg, BallMood mood,
             Color c = lit > 0.5f ? lerpColor(mid, light, (lit - 0.5f) * 2.0f)
                                  : lerpColor(dark, mid, lit * 2.0f);
 
-            // Rolling banknote bands (rotated with the body).
+            // Sample the ball's own surface, which turns with the roll. The
+            // banknote seams, coins and the "$" all live in this rotating space,
+            // so their movement across the ball is what reads as ROLLING rather
+            // than sliding.
             const float rx = dx * cs - dy * sn;
-            if ((static_cast<int>(std::floor(rx / 4.5f)) & 1) == 0) {
-                c = lerpColor(c, dark, 0.30f);
+            const float ry = dx * sn + dy * cs;
+
+            if ((static_cast<int>(std::floor(rx / 4.0f)) & 1) == 0) {
+                c = lerpColor(c, dark, 0.45f);        // banknote seam
             }
+            if (coinHit(rx, ry)) {
+                c = lerpColor(c, light, 0.55f);       // embedded coin
+            }
+            if (dollarGlyph(rx, ry)) {
+                c = band;                             // the "$" turns with it
+            }
+
             // A rim so the ball reads against any background.
             if (d2 > (r - 1.4f) * (r - 1.4f)) c = lerpColor(c, shadow, 0.8f);
 
@@ -221,13 +269,9 @@ void drawBall(float cx, float cy, float r, float spinDeg, BallMood mood,
         }
     }
 
-    // Dollar sign, upright.
+    // Eyes and mouth stay upright so the ball is always "facing" you, exactly as
+    // the design calls for -- everything else rolls.
     const int sx = icx, sy = icy + 12;
-    DrawLine(sx, sy - 6, sx, sy + 6, band);
-    DrawLine(sx - 3, sy - 4, sx + 3, sy - 4, band);
-    DrawLine(sx - 3, sy + 4, sx + 3, sy + 4, band);
-    DrawLine(sx - 3, sy - 4, sx - 3, sy - 1, band);
-    DrawLine(sx + 3, sy + 1, sx + 3, sy + 4, band);
 
     // Face and props stay upright regardless of the roll.
     drawEyes(sx, sy - 22, mood, pal);

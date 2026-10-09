@@ -24,6 +24,7 @@ void Game::startLife() {
     timeSincePush_ = 0.0f;
     lineTimer_     = 0.0f;
     ballSpin_      = 0.0f;
+    lastProgress_  = 0.0f;
     deathT_        = 0.0f;
     walkT_         = 0.0f;
     strain_        = 0.0f;
@@ -140,7 +141,6 @@ void Game::update(const Input& in, float dt) {
             si.active = true;
             if (in.pushPressed) ++totalPushes_;
             sim_.step(si, dt);
-            ballSpin_ += sim_.state().vel * dt * 2000.0f;   // cosmetic roll
             updateDialogue(in, dt);
             if (sim_.reachedSummit()) {
                 ++completedLives_;
@@ -226,6 +226,15 @@ void Game::update(const Input& in, float dt) {
 
     updateMoodAndPose(in);
     strain_ = sim_.state().strain;
+
+    // Rolling, not sliding. The ball's surface rotation is derived from how far
+    // it physically moved this frame (distance / radius), so it turns the right
+    // amount while being pushed, while slipping backwards, and all the way back
+    // down the hill. Measuring displacement rather than velocity also means the
+    // roll stays correct while the ball is coasting or being held.
+    const float progress = ballProgress();
+    ballSpin_ += (progress - lastProgress_) * ROLL_DEG_PER_PROGRESS;
+    lastProgress_ = progress;
 }
 
 } // namespace cashyphus

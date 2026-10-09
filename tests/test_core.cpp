@@ -85,16 +85,41 @@ static void test_push_and_stamina() {
     CHECK(s.state().stamina < 1.0f);
     CHECK(s.state().pushes == 1);
 
-    in.push = true;
-    for (int i = 0; i < 10; ++i) s.step(in, FIXED_DT);
+    // Keep pushing on a realistic beat (one press every 9 frames, which is
+    // inside the cooldown), and the tank must visibly drain.
+    for (int i = 0; i < 90; ++i) {
+        SimInput p;
+        p.active = true;
+        p.push = (i % 9 == 0);
+        s.step(p, FIXED_DT);
+    }
     CHECK(s.state().stamina < 0.9f);
     CHECK(s.state().progress > 0.0f);
+    CHECK(s.state().pushes > 5);
 
     // Stamina never goes out of range no matter how hard we mash.
     in.push = true;
     for (int i = 0; i < 600; ++i) s.step(in, FIXED_DT);
     CHECK(s.state().stamina >= 0.0f);
     CHECK(s.state().stamina <= 1.0f);
+}
+
+// =============================================================================
+//  Sim: the push cooldown. Spamming must not translate into extra shoves.
+// =============================================================================
+static void test_push_rate_is_capped() {
+    section("sim: push rate is capped");
+
+    Sim spam;
+    spam.reset();
+    SimInput in;
+    in.active = true;
+    in.push = true;
+    for (int i = 0; i < 60; ++i) spam.step(in, FIXED_DT);   // 60 attempts in 1 second
+
+    std::printf("  %d of 60 frame-perfect presses were accepted\n", spam.state().pushes);
+    CHECK(spam.state().pushes >= 5);    // roughly one per cooldown...
+    CHECK(spam.state().pushes <= 10);   // ...nowhere near one per frame
 }
 
 // =============================================================================
@@ -335,6 +360,84 @@ static void test_later_lives_are_heavier() {
 }
 
 // =============================================================================
+//  Sim: the body wears down. Aging must cost stamina AND grip efficiency, not
+//  just raw push power -- an old frame tires sooner and holds on for less time.
+// =============================================================================
+static void pumpTo(Sim& s, float target, int maxFrames) {
+    bool resting = false;
+    for (int f = 0; f < maxFrames && s.state().progress < target; ++f) {
+        if (s.state().stamina < 0.15f) resting = true;
+        if (s.state().stamina > 0.70f) resting = false;
+        SimInput in;
+        in.active = true;
+        in.push   = !resting && (f % 10 == 0);
+        in.brace  = resting;
+        s.step(in, FIXED_DT);
+    }
+}
+
+static void test_aging_degrades_stamina_and_grip() {
+    section("sim: aging degrades stamina and grip efficiency");
+
+    Sim young;
+    young.reset();
+    young.setLife(1);
+
+    Sim aged;
+    aged.reset();
+    aged.setLife(1);
+    pumpTo(aged, 0.80f, 60 * 300);          // climb into the final years
+    CHECK(aged.stage() == Stage::Final);
+    CHECK(young.stage() == Stage::Youth);
+
+    // --- stamina: the same shove costs an old body more ---
+    // Recover first. This both fills the tank and guarantees the push cooldown
+    // has expired, so we measure the cost of a shove rather than the absence of
+    // one (an early version of this test silently measured a rejected press).
+    auto staminaPerPush = [](Sim& s) {
+        SimInput idle;
+        idle.active = true;
+        for (int i = 0; i < 60 * 30; ++i) {
+            s.step(idle, FIXED_DT);
+            if (i >= 12 && s.state().stamina >= 0.95f) break;
+        }
+        const int pushesBefore = s.state().pushes;
+        const float before = s.state().stamina;
+        SimInput in;
+        in.active = true;
+        in.push = true;
+        s.step(in, FIXED_DT);
+        const bool landed = s.state().pushes == pushesBefore + 1;
+        return landed ? (before - s.state().stamina) : -1.0f;
+    };
+    const float youngCost = staminaPerPush(young);
+    const float agedCost  = staminaPerPush(aged);
+    CHECK(youngCost > 0.0f);   // -1 means the press was rejected, not measured
+    CHECK(agedCost > 0.0f);
+    std::printf("  stamina per push: young %.4f, aged %.4f\n",
+                static_cast<double>(youngCost), static_cast<double>(agedCost));
+    CHECK(agedCost > youngCost * 1.2f);
+
+    // --- grip: an old hand loses its hold faster ---
+    auto gripPerSecond = [](Sim& s) {
+        SimInput idle;                       // let the grip fully recover first
+        idle.active = true;
+        for (int i = 0; i < 60 * 2; ++i) s.step(idle, FIXED_DT);
+        const float before = s.state().grip;
+        SimInput in;
+        in.active = true;
+        in.brace = true;
+        for (int i = 0; i < 60; ++i) s.step(in, FIXED_DT);
+        return before - s.state().grip;
+    };
+    const float youngGrip = gripPerSecond(young);
+    const float agedGrip  = gripPerSecond(aged);
+    std::printf("  grip per second:  young %.4f, aged %.4f\n",
+                static_cast<double>(youngGrip), static_cast<double>(agedGrip));
+    CHECK(agedGrip > youngGrip * 1.2f);
+}
+
+// =============================================================================
 //  Dialogue
 // =============================================================================
 static void test_dialogue() {
@@ -470,6 +573,52 @@ static GameRun runGame(ChoicePolicy policy, int stopAfterChoices, int maxFrames 
     return r;
 }
 
+// =============================================================================
+//  Game: the ball must ROLL, not slide. The reported bug was that its surface
+//  rotation was only driven during the climb, so it slid down the whole hill
+//  with the texture frozen. Rotation is now derived from distance travelled.
+// =============================================================================
+static void test_ball_rolls_while_running_back() {
+    section("game: the ball rolls instead of sliding");
+
+    Game g;
+    bool resting = false;
+    int frame = 0;
+    while (g.phase() != Phase::RollDown && frame < 60 * 900) {
+        Input in;
+        if (g.phase() == Phase::Title) {
+            in.anyPressed = true;
+            in.pushPressed = true;
+        } else if (g.phase() == Phase::Climb) {
+            const SimState& s = g.sim().state();
+            if (s.stamina < 0.15f) resting = true;
+            if (s.stamina > 0.70f) resting = false;
+            if (resting)                  in.braceHeld = true;
+            else if (frame % 10 == 0)   { in.pushPressed = true; in.pushHeld = true; }
+            in.anyPressed = true;
+        }
+        g.update(in, FIXED_DT);
+        ++frame;
+    }
+    CHECK(g.phase() == Phase::RollDown);
+
+    // Let it run home and watch the rotation.
+    const float spin0 = g.ballSpin();
+    const float prog0 = g.ballProgress();
+    for (int i = 0; i < 30; ++i) {
+        Input in;                       // no input: gravity is doing the work
+        g.update(in, FIXED_DT);
+    }
+    const float dSpin = g.ballSpin() - spin0;
+    const float dProg = g.ballProgress() - prog0;
+
+    std::printf("  rolled %.1f deg while travelling %.3f of the hill\n",
+                static_cast<double>(dSpin), static_cast<double>(dProg));
+    CHECK(dProg < 0.0f);                                            // went downhill
+    CHECK(dSpin < -1.0f);                                           // and it TURNED
+    CHECK(std::fabs(dSpin - dProg * ROLL_DEG_PER_PROGRESS) < 1.0f);  // true rolling
+}
+
 static void test_game_walk_away() {
     section("game: walk-away ending");
     const GameRun r = runGame(ChoicePolicy::Walk, 1);
@@ -501,14 +650,17 @@ int main() {
     std::printf("CASHYPHUS core tests\n====================\n");
     test_stages_and_aging();
     test_push_and_stamina();
+    test_push_rate_is_capped();
     test_gravity_rollback();
     test_aging_never_reverses();
     test_brace_grip_and_slip();
     test_auto_climb_is_completable();
     test_mashing_is_not_a_strategy();
     test_later_lives_are_heavier();
+    test_aging_degrades_stamina_and_grip();
     test_dialogue();
     test_palette();
+    test_ball_rolls_while_running_back();
     test_game_walk_away();
     test_game_keep_pushing();
 

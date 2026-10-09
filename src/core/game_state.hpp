@@ -95,7 +95,8 @@ private:
     float timeSincePush_ = 0.0f;
     float lineTimer_     = 0.0f;
     float lineAge_       = 0.0f;
-    float ballSpin_      = 0.0f;
+    float ballSpin_      = 0.0f;   // degrees; driven by distance travelled
+    float lastProgress_  = 0.0f;   // last frame's ball position, for the roll
     bool  lineComplaint_ = false;
 
     float deathT_ = 0.0f;

@@ -129,6 +129,10 @@ velocity model rather than a rigid-body one:
   shove (stamina 0) is worth only 5% of a fresh one, and pushes are rate-limited
   by a short cooldown, so grinding the key on an empty tank gets you nowhere.
   **Stamina is what actually buys progress**;
+* aging wears down *efficiency*, not just raw power. Every life stage makes a
+  push cost more stamina, stamina refill more slowly, grip drain faster and
+  grip recover slower, so an old body works in shorter bursts and needs longer
+  rests. By the final years a shove costs ~60% more and grip lasts ~30% less;
 * gravity accelerates the ball downhill, multiplied by a slope that steepens
   with progress (the hill literally gets steeper) *and* by the life counter:
   every incarnation makes the ball 8% heavier, up to +40%;
@@ -136,6 +140,12 @@ velocity model rather than a rigid-body one:
 * bracing cancels the ball's velocity, regenerates stamina and drains **grip**;
   when grip is exhausted the ball slips and you cannot hold it until grip
   recovers past a hysteresis threshold.
+
+The ball also genuinely **rolls**: its surface rotation is derived from the
+distance it actually travelled (`distance / radius`), so the banknote seams,
+coins and the `$` turn by the correct amount while it is pushed, while it slips
+backwards, and all the way back down the hill. Only the eyes and mouth stay
+upright, so the ball is always facing you.
 
 That combination is the whole game: pushing without resting stalls out, resting
 without pushing gives ground away, and grip is what stops you resting forever.

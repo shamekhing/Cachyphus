@@ -31,14 +31,14 @@ constexpr float MAX_SPEED = 0.150f;  // progress/s clamp
 // --- Push (SPACE) -------------------------------------------------------------
 // An exhausted shove is nearly worthless: stamina is what actually buys
 // progress, so mashing the key on an empty tank cannot beat the hill.
-constexpr float PUSH_IMPULSE       = 0.0240f; // progress/s added per press
+constexpr float PUSH_IMPULSE       = 0.0270f; // progress/s added per press
 constexpr float PUSH_COST          = 0.0600f; // stamina spent per press
 constexpr float STAMINA_MIN_FACTOR = 0.05f;   // push strength floor at 0 stamina
 constexpr float PUSH_COOLDOWN      = 0.13f;   // min gap between accepted pushes (~7.7/s)
 
 // --- Stamina regeneration -----------------------------------------------------
-constexpr float STAMINA_REGEN_BRACE = 0.60f;  // 1/s while bracing
-constexpr float STAMINA_REGEN_IDLE  = 0.10f;  // 1/s while not bracing
+constexpr float STAMINA_REGEN_BRACE = 1.00f;  // 1/s while bracing (before frailty)
+constexpr float STAMINA_REGEN_IDLE  = 0.12f;  // 1/s while not bracing
 
 // --- Brace (SHIFT) ------------------------------------------------------------
 constexpr float BRACE_ACCEL            = 0.35f; // progress/s^2 opposing rollback
@@ -50,9 +50,28 @@ constexpr float GRIP_RECOVER_THRESHOLD = 0.25f; // hysteresis after a slip
 constexpr float STAGE_YOUTH_END = 0.25f;
 constexpr float STAGE_ADULT_END = 0.50f;
 constexpr float STAGE_OLD_END   = 0.75f;
-constexpr float AGE_FACTOR[4]   = { 1.00f, 0.96f, 0.92f, 0.86f };
 constexpr int   AGE_START       = 18;
 constexpr int   AGE_END         = 80;
+
+// How much raw shove the character can still put out (Youth..Final).
+constexpr float AGE_FACTOR[4] = { 1.00f, 0.96f, 0.92f, 0.86f };
+
+// Frailty: aging also wears down the body's *efficiency*, not just its power.
+// Stamina efficiency scales how fast the tank refills (and divides how much
+// each push costs); grip efficiency scales how fast grip recovers (and divides
+// how long the ball can be held). An old body tires sooner and holds less.
+constexpr float AGE_STAMINA_EFF[4] = { 1.00f, 0.90f, 0.78f, 0.64f };
+constexpr float AGE_GRIP_EFF[4]    = { 1.00f, 0.92f, 0.82f, 0.70f };
+
+// --- World geometry (one source of truth for physics and rendering) ----------
+constexpr float HILL_LEN    = 900.0f;  // world x of the summit, in pixels
+constexpr float BALL_RADIUS = 26.0f;   // the money ball's radius, in pixels
+
+// Rolling without slipping: a ball turns distance/radius radians, so a full
+// 0..1 trip along the hill is this many degrees. The renderer rotates the
+// ball's surface by exactly this much, which is what makes it roll instead of
+// slide -- including while it runs back down.
+constexpr float ROLL_DEG_PER_PROGRESS = (HILL_LEN / BALL_RADIUS) * 57.29577951f;
 
 // --- Per-cycle difficulty -----------------------------------------------------
 // The hill gets a little crueller every lifetime: the ball pulls back harder and
