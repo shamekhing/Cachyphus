@@ -7,6 +7,10 @@
 #include <cstring>
 #include <string>
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
+
 #include "audio/synth.hpp"
 #include "core/config.hpp"
 #include "core/game_state.hpp"
@@ -206,121 +210,160 @@ void present(const RenderTexture2D& target) {
     DrawTexturePro(target.texture, src, dst, { 0.0f, 0.0f }, 0.0f, WHITE);
 }
 
+// -----------------------------------------------------------------------------
+//  The running game, in one object.
+//
+//  This has to outlive main() on the web: emscripten_set_main_loop unwinds the
+//  C stack instead of returning, which destroys main()'s locals, so the state
+//  lives at namespace scope where the frame callback can still reach it.
+// -----------------------------------------------------------------------------
+struct App {
+    Options         opts;
+    RenderTexture2D target{};
+    audio::Synth    synth;
+    art::SpriteBank sprites;
+    Game            game;
+    AudioCues       cues;
+    CaptureState    cap;
+    float           accum   = 0.0f;
+    bool            running = true;
+};
+
+App g_app;
+
+void renderFrame() {
+    const Palette pal = framePalette(g_app.game);
+    BeginTextureMode(g_app.target);
+    ClearBackground(art::toColor(pal.skyTop));
+    scene::draw(g_app.game, pal, g_app.sprites);
+    hud::draw(g_app.game, pal);
+    EndTextureMode();
+}
+
+// One frame: fixed-step simulation, then present. Identical on both platforms;
+// only what drives it differs.
+void frameStep() {
+    App& a = g_app;
+    if (WindowShouldClose()) { a.running = false; return; }
+
+    if (a.opts.capture) {
+        a.accum += 20.0f * FIXED_DT;   // fast-forward so a walkthrough is quick
+    } else {
+        float frame = GetFrameTime();
+        if (frame > MAX_FRAME) frame = MAX_FRAME;
+        a.accum += frame;
+    }
+
+    const Input realIn = a.opts.capture ? Input{} : readInput();
+    bool firstStep = true;
+    while (a.accum >= FIXED_DT) {
+        Input step;
+        if (a.opts.capture) {
+            // The auto-player must see every simulation step so its push beat
+            // lands at a realistic rate.
+            step = autoInput(a.game, a.cap);
+            ++a.cap.frames;
+            ++a.cap.sinceShotSteps;
+        } else {
+            step = realIn;
+            if (!firstStep) {
+                step.pushPressed = false;
+                step.bracePressed = false;
+                step.anyPressed = false;
+            }
+        }
+        a.game.update(step, FIXED_DT);
+        driveAudio(a.synth, a.game, a.cues, step, FIXED_DT);
+        a.accum -= FIXED_DT;
+        firstStep = false;
+    }
+
+    renderFrame();
+
+    BeginDrawing();
+    ClearBackground(BLACK);
+    present(a.target);
+    EndDrawing();
+
+    if (a.opts.capture) {
+        const bool phaseChanged = a.game.phase() != a.cap.lastPhase;
+        const bool periodic = a.game.phase() == Phase::Climb && a.cap.sinceShotSteps > 15 * 60;
+        if (phaseChanged || periodic) {
+            char name[512];
+            std::snprintf(name, sizeof(name), "%s_%02d.png", a.opts.prefix.c_str(),
+                          a.cap.shotIndex++);
+            saveTarget(a.target, name);
+            std::printf("captured %s  (phase=%d life=%d progress=%.2f)\n",
+                        name, static_cast<int>(a.game.phase()), a.game.incarnation(),
+                        a.game.ballProgress());
+            a.cap.sinceShotSteps = 0;
+            a.cap.lastPhase = a.game.phase();
+        }
+        if (a.game.phase() == Phase::Credits && a.game.phaseTime() > 3.0f) a.running = false;
+    }
+}
+
+#if defined(__EMSCRIPTEN__)
+void webFrame() {
+    frameStep();
+    if (!g_app.running) emscripten_cancel_main_loop();
+}
+#endif
+
 } // namespace
 
 int main(int argc, char** argv) {
-    const Options opts = parseArgs(argc, argv);
+    App& a = g_app;
+    a.opts = parseArgs(argc, argv);
 
     int flags = FLAG_WINDOW_RESIZABLE;
-    if (!opts.capture) flags |= FLAG_VSYNC_HINT;
+    if (!a.opts.capture) flags |= FLAG_VSYNC_HINT;
     SetConfigFlags(flags);
     InitWindow(VIRTUAL_W * 3, VIRTUAL_H * 3, "CASHYPHUS");
     SetWindowMinSize(VIRTUAL_W * 2, VIRTUAL_H * 2);
-    SetTargetFPS(opts.capture ? 0 : 60);
+    SetTargetFPS(a.opts.capture ? 0 : 60);
 
     // The whole UI draws with a real 8px bitmap face instead of raylib's
     // smooth default, which is what makes the interface read as 16-bit.
     art::text::load();
 
     // 320x180 render target, integer-scaled to the window.
-    RenderTexture2D target = LoadRenderTexture(VIRTUAL_W, VIRTUAL_H);
-    SetTextureFilter(target.texture, TEXTURE_FILTER_POINT);
+    a.target = LoadRenderTexture(VIRTUAL_W, VIRTUAL_H);
+    SetTextureFilter(a.target.texture, TEXTURE_FILTER_POINT);
 
     InitAudioDevice();
-    audio::Synth synth;
-    synth.init();
-    synth.musicStart();
+    a.synth.init();
+    a.synth.musicStart();
 
-    art::SpriteBank sprites;
-    sprites.load();
+    a.sprites.load();
 
     // Report any malformed sprite rows once, at startup.
     const int badRows = art::SpriteBank::validateAll();
     if (badRows != 0) TraceLog(LOG_WARNING, "CASHYPHUS: %d malformed sprite sheet(s)", badRows);
 
-    Game game;
-    AudioCues cues;
-    CaptureState cap;
-    float accum = 0.0f;
-
-    const auto renderFrame = [&]() {
-        const Palette pal = framePalette(game);
-        BeginTextureMode(target);
-        ClearBackground(art::toColor(pal.skyTop));
-        scene::draw(game, pal, sprites);
-        hud::draw(game, pal);
-        EndTextureMode();
-    };
-
     // Capture mode: grab the title screen before anything moves.
-    if (opts.capture) {
+    if (a.opts.capture) {
         renderFrame();
-        saveTarget(target, opts.prefix + "_title.png");
+        saveTarget(a.target, a.opts.prefix + "_title.png");
         std::printf("captured title\n");
     }
 
-    while (!WindowShouldClose()) {
-        if (opts.capture) {
-            accum += 20.0f * FIXED_DT;   // fast-forward so a walkthrough is quick
-        } else {
-            float frame = GetFrameTime();
-            if (frame > MAX_FRAME) frame = MAX_FRAME;
-            accum += frame;
-        }
+#if defined(__EMSCRIPTEN__)
+    // raylib does not drive a main loop on the web -- it expects the game to.
+    // A plain while() here would block the browser's main thread for ever and
+    // the tab would never paint, which is exactly what a blank page looks like.
+    // simulate_infinite_loop = 1 means this call does not return, so the
+    // teardown below is native-only.
+    emscripten_set_main_loop(webFrame, 0, 1);
+#else
+    while (a.running) frameStep();
 
-        const Input realIn = opts.capture ? Input{} : readInput();
-        bool firstStep = true;
-        while (accum >= FIXED_DT) {
-            Input step;
-            if (opts.capture) {
-                // The auto-player must see every simulation step so its push
-                // beat lands at a realistic rate.
-                step = autoInput(game, cap);
-                ++cap.frames;
-                ++cap.sinceShotSteps;
-            } else {
-                step = realIn;
-                if (!firstStep) {
-                    step.pushPressed = false;
-                    step.bracePressed = false;
-                    step.anyPressed = false;
-                }
-            }
-            game.update(step, FIXED_DT);
-            driveAudio(synth, game, cues, step, FIXED_DT);
-            accum -= FIXED_DT;
-            firstStep = false;
-        }
-
-        renderFrame();
-
-        BeginDrawing();
-        ClearBackground(BLACK);
-        present(target);
-        EndDrawing();
-
-        if (opts.capture) {
-            const bool phaseChanged = game.phase() != cap.lastPhase;
-            const bool periodic = game.phase() == Phase::Climb && cap.sinceShotSteps > 15 * 60;
-            if (phaseChanged || periodic) {
-                char name[512];
-                std::snprintf(name, sizeof(name), "%s_%02d.png", opts.prefix.c_str(), cap.shotIndex++);
-                saveTarget(target, name);
-                std::printf("captured %s  (phase=%d life=%d progress=%.2f)\n",
-                            name, static_cast<int>(game.phase()), game.incarnation(),
-                            game.ballProgress());
-                cap.sinceShotSteps = 0;
-                cap.lastPhase = game.phase();
-            }
-            if (game.phase() == Phase::Credits && game.phaseTime() > 3.0f) break;
-        }
-    }
-
-    synth.shutdown();
+    a.synth.shutdown();
     CloseAudioDevice();
-    sprites.unload();
+    a.sprites.unload();
     art::text::unload();
-    UnloadRenderTexture(target);
+    UnloadRenderTexture(a.target);
     CloseWindow();
+#endif
     return 0;
 }

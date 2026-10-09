@@ -2,61 +2,318 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <!-- viewport-fit=cover so the canvas can use the whole screen on notched
+       phones. maximum-scale/user-scalable stop the browser zooming the page
+       out from under the game when a finger lands twice. -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0a0e">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>CASHYPHUS</title>
   <style>
+    /* The game renders a 320x180 image and lets CSS scale it, so all the layout
+       work is a letterbox. The rest of this exists to stop a mobile browser
+       fighting the game: no scroll, no pinch zoom, no pull-to-refresh, no
+       long-press callout, no tap highlight. */
+    :root {
+      --vw: 100vw;
+      --vh: 100vh;
+    }
+    @supports (height: 100dvh) {
+      /* Dynamic viewport height, so the canvas is not sized to a viewport the
+         browser is about to hide behind a toolbar. */
+      :root { --vh: 100dvh; }
+    }
+
     html, body {
       margin: 0;
       padding: 0;
+      width: 100%;
       height: 100%;
       background: #0b0a0e;
       overflow: hidden;
-      font-family: monospace;
+      overscroll-behavior: none;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
     }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* 16:9 letterbox against whichever of width or height runs out first. */
     canvas.emscripten {
       display: block;
-      margin: 0 auto;
+      width: min(var(--vw), calc(var(--vh) * 16 / 9));
+      height: min(var(--vh), calc(var(--vw) * 9 / 16));
       border: 0;
+      background: #0b0a0e;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
-      background: #0b0a0e;
+      touch-action: none;
+      outline: none;
     }
-    #spinner {
-      margin: auto;
+
+    /* Loading and failure share this panel. A silent blank page is the worst
+       failure mode a wasm build can have, so anything that goes wrong prints
+       here instead of nowhere. */
+    #panel {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 24px;
+      box-sizing: border-box;
       color: #e8e4d8;
       text-align: center;
-      padding-top: 30vh;
-      letter-spacing: 0.3em;
+      background: #0b0a0e;
+      z-index: 10;
     }
-    #controls {
-      position: fixed;
-      bottom: 8px;
-      width: 100%;
-      text-align: center;
-      color: #8a877e;
+    #panel.hidden { display: none; }
+    #panel h1 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: 0.35em;
+      font-weight: 600;
+      color: #ffd98a;
+    }
+    #panel p { margin: 0; font-size: 13px; line-height: 1.6; color: #8a877e; max-width: 34em; }
+    #panel .err {
+      color: #ff9a8a;
       font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 40vh;
+      overflow: auto;
+      text-align: left;
+      background: #17141c;
+      padding: 10px 12px;
+      border-radius: 6px;
+      max-width: 60em;
+      width: 100%;
+    }
+    #start {
+      appearance: none;
+      border: 1px solid #3a3546;
+      background: #17141c;
+      color: #ffd98a;
+      font: inherit;
+      font-size: 14px;
+      letter-spacing: 0.2em;
+      padding: 12px 22px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #start:active { background: #221d2b; }
+
+    #hint {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: max(6px, env(safe-area-inset-bottom));
+      text-align: center;
+      color: #6f6b64;
+      font-size: 11px;
+      letter-spacing: 0.08em;
       pointer-events: none;
+      z-index: 5;
+    }
+    #hint .touch { display: none; }
+    @media (hover: none) and (pointer: coarse) {
+      #hint .touch { display: inline; }
+      #hint .kb { display: none; }
     }
   </style>
 </head>
 <body>
-  <div id="spinner">LOADING CASHYPHUS...</div>
   <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
-  <div id="controls">SPACE / tap = push &nbsp;&middot;&nbsp; SHIFT = brace &nbsp;&middot;&nbsp; F = fullscreen</div>
+
+  <div id="hint">
+    <span class="kb">SPACE push &middot; SHIFT brace &middot; F fullscreen</span>
+    <span class="touch">tap = PUSH &middot; hold = BRACE</span>
+  </div>
+
+  <div id="panel">
+    <h1>CASHYPHUS</h1>
+    <p>One hill. One lifetime. One more push.</p>
+    <button id="start" type="button">TAP TO PLAY</button>
+    <p id="status">loading engine&hellip;</p>
+  </div>
+
   <script>
-    // This must be defined BEFORE the loader below, so the runtime picks it up.
+    var panel    = document.getElementById('panel');
+    var statusEl = document.getElementById('status');
+    var canvas   = document.getElementById('canvas');
+    var logTail  = [];
+
+    function hidePanel() { if (panel) panel.classList.add('hidden'); }
+    function panelVisible() { return panel && !panel.classList.contains('hidden'); }
+
+    function showError(msg) {
+      if (!panel) return;
+      panel.classList.remove('hidden');
+      var old = panel.querySelector('.err');
+      if (old) old.remove();
+      var box = document.createElement('div');
+      box.className = 'err';
+      box.textContent = String(msg);
+      panel.appendChild(box);
+      if (logTail.length) {
+        var log = document.createElement('div');
+        log.className = 'err';
+        log.textContent = logTail.join('\n');
+        panel.appendChild(log);
+      }
+    }
+
+    // A blank page is the worst possible failure for a wasm build, so anything
+    // that throws, rejects, or aborts prints into the panel instead of nowhere.
+    window.addEventListener('error', function (e) {
+      showError('Runtime error: ' + (e.message || e.error || e.type));
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var r = e.reason;
+      showError('Load failed: ' + (r && r.message ? r.message : r));
+    });
+
+    // Defined before the loader script below so the runtime picks it up.
     var Module = {
       onRuntimeInitialized: function () {
-        var s = document.getElementById('spinner');
-        if (s) s.style.display = 'none';
+        if (statusEl) statusEl.textContent = 'ready';
+      },
+      onAbort: function (what) {
+        showError('Aborted: ' + what);
+      },
+      printErr: function (line) {
+        // Kept only for the failure report; raylib is chatty at INFO level.
+        logTail.push(String(line));
+        if (logTail.length > 40) logTail.shift();
       }
     };
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'f' || e.key === 'F') {
-        var c = document.getElementById('canvas');
-        if (!document.fullscreenElement) { if (c.requestFullscreen) c.requestFullscreen(); }
-        else if (document.exitFullscreen) { document.exitFullscreen(); }
+
+    // If the runtime never arrives, say so rather than spinning for ever --
+    // usually a 404 on the .wasm or a MIME-type problem.
+    setTimeout(function () {
+      if (statusEl && statusEl.textContent.indexOf('ready') === -1) {
+        showError('The engine did not start within 25s.\n' +
+                  'Check that cashyphus.wasm is being served next to this page ' +
+                  'and that the server returns application/wasm for it.');
       }
+    }, 25000);
+
+    // --- touch -> the game's two keys --------------------------------------
+    // The game already reads SPACE (push) and SHIFT (brace) as ordinary key
+    // state, so touch is translated into those keys rather than adding a second
+    // input path inside the engine. window is where Emscripten's keyboard
+    // listener lives.
+    var KEY_SPACE = { code: 'Space',     keyCode: 32 };
+    var KEY_SHIFT = { code: 'ShiftLeft', keyCode: 16 };
+
+    function sendKey(type, k) {
+      var ev = new KeyboardEvent(type, { code: k.code, key: k.code, bubbles: true, cancelable: true });
+      try {
+        Object.defineProperty(ev, 'keyCode', { get: function () { return k.keyCode; } });
+        Object.defineProperty(ev, 'which',   { get: function () { return k.keyCode; } });
+      } catch (err) { /* older browsers may ignore this; the code field may do */ }
+      window.dispatchEvent(ev);
+    }
+
+    // Beyond this a touch is a brace rather than a push.
+    var HOLD_MS = 160;
+    // A synthetic push has to stay down for at least one frame, or the game
+    // never sees the edge: raylib samples key state once per frame, and a
+    // keydown plus keyup inside one frame cancel out. 70ms is comfortably
+    // longer than a frame at 60Hz.
+    var TAP_MS = 70;
+
+    var activeTouch = null;
+    var holdTimer = null;
+    var braced = false;
+
+    function beginTouch(e) {
+      if (activeTouch !== null) return;          // ignore extra fingers
+      activeTouch = (e.changedTouches && e.changedTouches[0])
+        ? e.changedTouches[0].identifier : 0;
+      braced = false;
+      holdTimer = setTimeout(function () { braced = true; sendKey('keydown', KEY_SHIFT); }, HOLD_MS);
+    }
+
+    function endTouch() {
+      if (activeTouch === null) return;
+      clearTimeout(holdTimer);
+      holdTimer = null;
+      if (braced) {
+        sendKey('keyup', KEY_SHIFT);
+      } else {
+        sendKey('keydown', KEY_SPACE);
+        setTimeout(function () { sendKey('keyup', KEY_SPACE); }, TAP_MS);
+      }
+      braced = false;
+      activeTouch = null;
+    }
+
+    // Bound to the document, not the canvas, so the letterboxed bars and the
+    // area around a phone's notch are still part of the control surface.
+    document.addEventListener('touchstart', function (e) {
+      if (panelVisible()) return;                // the start button owns this
+      // Stops the browser inventing a mouse press from this touch, which would
+      // otherwise drive the game's mouse handling a second time.
+      e.preventDefault();
+      beginTouch(e);
+    }, { passive: false });
+
+    document.addEventListener('touchend', function (e) {
+      if (panelVisible()) return;
+      e.preventDefault();
+      endTouch();
+    }, { passive: false });
+
+    document.addEventListener('touchcancel', function (e) {
+      if (panelVisible()) return;
+      e.preventDefault();
+      endTouch();
+    }, { passive: false });
+
+    function goFullscreen() {
+      var el = document.documentElement;
+      var fn = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (!fn) return;
+      try {
+        var p = fn.call(el);
+        if (p && p.catch) p.catch(function () {});
+      } catch (err) { /* iOS Safari refuses; not worth surfacing */ }
+      if (screen.orientation && screen.orientation.lock) {
+        try {
+          var q = screen.orientation.lock('landscape');
+          if (q && q.catch) q.catch(function () {});
+        } catch (err) { /* desktop and iOS both refuse */ }
+      }
+    }
+
+    var startBtn = document.getElementById('start');
+    if (startBtn) {
+      startBtn.addEventListener('click', function () {
+        hidePanel();
+        goFullscreen();     // a click is the user gesture browsers require
+        // The title screen is waiting for a press, so give it one.
+        sendKey('keydown', KEY_SPACE);
+        setTimeout(function () { sendKey('keyup', KEY_SPACE); }, TAP_MS);
+      });
+    }
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'f' || e.key === 'F') goFullscreen();
     });
   </script>
   {{{ SCRIPT }}}

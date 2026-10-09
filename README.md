@@ -40,6 +40,18 @@ raylib is pulled in automatically with CMake `FetchContent` (pinned to **5.5**),
 so the only prerequisites are a C++17 compiler, CMake >= 3.20, and the usual
 X11/OpenGL development packages.
 
+### Quick start
+
+`run.sh` wraps everything below:
+
+```bash
+./run.sh              # build if stale, then play
+./run.sh --release    # optimised build
+./run.sh --fresh      # wipe the build tree first (after CMake changes)
+./run.sh --tests      # build and run the headless tests, don't play
+./run.sh --web        # build the WebAssembly version and serve it on :8000
+```
+
 ### Linux (native)
 
 ```bash
@@ -72,7 +84,24 @@ python3 -m http.server -d build-web 8000   # then open cashyphus.html
 ```
 
 Because there are no asset files there is nothing to preload, so the whole game is
-`cashyphus.html` + `cashyphus.js` + `cashyphus.wasm`, about 580 KB in total.
+`cashyphus.html` + `cashyphus.js` + `cashyphus.wasm`, about 1.1 MB in total -- most
+of the wasm is the baked music table.
+
+The page is built to be played on a phone as it stands: the canvas letterboxes
+itself to 16:9 against the viewport, and **tap is PUSH, press-and-hold is BRACE**.
+Both the layout and that touch bridge live in `web/shell.html`, which is also
+where any load failure is reported -- a wasm build that fails silently is a blank
+page, which is the worst possible failure mode, so nothing is allowed to fail
+quietly.
+
+> **The web build has to drive its own main loop.** raylib never calls
+> `emscripten_set_main_loop` itself, so a plain `while (!WindowShouldClose())`
+> blocks the browser's main thread for ever and the tab never paints -- which is
+> exactly what a blank page looks like. `src/main.cpp` therefore splits the frame
+> into `frameStep()` and hands it to `emscripten_set_main_loop` under Emscripten,
+> keeping the plain loop for native. The game state lives in a namespace-scope
+> `App`, not in `main`'s locals, because that call unwinds the stack rather than
+> returning.
 
 ### Publishing a playable page (GitHub Pages)
 
@@ -258,6 +287,14 @@ python3 tools/gen_music.py track.wav     # a loop             -> music_data.cpp
 
 Where those assets come from, and under what licences, is in
 **[assets/CREDITS.md](assets/CREDITS.md)**.
+
+**Touch-bridge test**   checks the page's tap-vs-hold translation without needing
+a browser: it loads the built page's inline script against a stub DOM and fires
+synthetic touch events at it. Run it against a page you have already built:
+
+```bash
+node web/test_touch.js build-web/cashyphus.html
+```
 
 ---
 

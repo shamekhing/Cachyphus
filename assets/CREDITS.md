@@ -9,8 +9,8 @@ hand-authored convincingly.
 ### Retro Pixel Arcade
 
 - **Source:** `assets/fonts/retro-pixel-arcade.bdf`
-- **Author:** TakWolf — <https://github.com/TakWolf/retro-pixel-font>
-- **Licence:** SIL Open Font License 1.1 — see `assets/fonts/LICENSE-OFL`
+- **Author:** TakWolf  <https://github.com/TakWolf/retro-pixel-font>
+- **Licence:** SIL Open Font License 1.1  see `assets/fonts/LICENSE-OFL`
 - **Used for:** all text in the game.
 
 The BDF is committed as the original, unmodified source. `tools/gen_font.py`
@@ -21,7 +21,7 @@ Two consequences worth knowing:
 
 - the shipping game needs **no font file at runtime**, so the desktop binary
   stays self-contained and the Emscripten build needs no `--preload-file`;
-- the build itself needs **no Python** — the generated header is committed, and
+- the build itself needs **no Python**  the generated header is committed, and
   the generator only has to be re-run when the font is replaced.
 
 To regenerate after changing the BDF or the cell metrics:
@@ -32,10 +32,10 @@ python3 tools/gen_font.py
 
 ## Music
 
-### Amusement park Stage — the climb theme
+### Amusement park Stage  the climb theme
 
-- **Author:** MintoDog — <https://opengameart.org/content/amusement-park-stage>
-- **Licence:** CC0 1.0 (public domain) — no attribution required, credited anyway
+- **Author:** MintoDog  <https://opengameart.org/content/amusement-park-stage>
+- **Licence:** CC0 1.0 (public domain)  no attribution required, credited anyway
 - **Upstream:** `amusement_park_stage_bpm150.ogg`, 64 s, 150 BPM, tagged
   *positive* and *loopable*
 - **Used for:** the repeating climb theme.
@@ -43,14 +43,14 @@ python3 tools/gen_font.py
 The brief asks for music that starts out *"motivational, almost comically
 cheerful"* and becomes *"thinner and more mechanical"* over successive
 incarnations. That is a composed track plus an arrangement that thins out, so
-the game ships a real track and does the thinning itself at playback time —
+the game ships a real track and does the thinning itself at playback time 
 see `src/core/music.hpp` for the curve and `src/audio/climb.cpp` for the
 treatment.
 
 The 64 s original is **not committed**: the game needs one looping section of
 it, not 1.9 MB of compressed audio. `tools/gen_music.py` picks the eight-bar
 section that stitches together most cleanly, crossfades the seam, folds it to
-mono, resamples it, and writes `src/audio/music_data.cpp` — the same
+mono, resamples it, and writes `src/audio/music_data.cpp`  the same
 bake-once-and-commit-the-result arrangement the font uses.
 
 To rebuild the table:

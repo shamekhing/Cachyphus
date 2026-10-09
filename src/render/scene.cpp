@@ -80,6 +80,40 @@ void drawSun(const Palette& pal) {
     DrawCircle(248, 40, 9, Color{ c.r, c.g, c.b, 200 });
 }
 
+// -----------------------------------------------------------------------------
+//  Clouds
+//
+//  The brief lists clouds among the background elements. Without them the top
+//  half of a 320x180 frame is a flat wash of sky, which is most of why the
+//  scene read as empty.
+// -----------------------------------------------------------------------------
+void drawClouds(const Palette& pal, float camX) {
+    // Mixed from the sky's own colour rather than hard-coded, so the clouds go
+    // pale and cold along with everything else on the way to the summit.
+    const Color body = lerpColor(toColor(pal.skyTop), toColor(pal.uiText), 0.52f);
+
+    // They drift on their own as well as scrolling, which is what stops the sky
+    // looking like a backdrop that has been pinned to the camera.
+    const float drift = static_cast<float>(GetTime()) * 2.5f;
+
+    for (int i = 0; i < 6; ++i) {
+        // Each cloud gets its own span so they never settle into a pattern.
+        const float span = 190.0f + static_cast<float>(i) * 53.0f;
+        const float wrap = span + VIRTUAL_W;
+        float x = std::fmod(static_cast<float>(i) * 113.0f + camX * 0.07f + drift, wrap) - 60.0f;
+
+        const int xi = static_cast<int>(x);
+        const int y  = 20 + (i % 3) * 16;      // clear of the status bar
+        const int s  = (i % 2 == 0) ? 1 : 2;
+
+        // A puff: a flat base with three overlapping blobs sitting on it.
+        DrawRectangle(xi, y + 4 * s, 17 * s, 3 * s, body);
+        DrawCircle(xi + 4 * s,  y + 4 * s, 3.0f * s, body);
+        DrawCircle(xi + 9 * s,  y + 3 * s, 4.0f * s, body);
+        DrawCircle(xi + 14 * s, y + 4 * s, 3.0f * s, body);
+    }
+}
+
 void drawParallax(const Palette& pal, float camX) {
     // Two layers of triangular mountains, scrolling at different rates.
     const Color far  = toColor(pal.mountainFar);
@@ -425,6 +459,7 @@ void draw(const Game& g, const Palette& pal, const SpriteBank& sprites) {
 
     drawSky(pal);
     drawSun(pal);
+    drawClouds(pal, camX);
     drawParallax(pal, camX);
     drawHill(pal, camX);
 
