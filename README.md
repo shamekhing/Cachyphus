@@ -235,17 +235,146 @@ mkdir -p shots && cd shots
 
 ---
 
-## Balancing
+## Tuning / balancing
 
-Everything tunable lives in `src/core/config.hpp`: push impulse, stamina cost
-and the push cooldown, gravity and damping, the slope curve, grip
-drain/recovery, the four aging stages, the per-cycle weight ramp
-(`CYCLE_GRAVITY_STEP` / `CYCLE_GRAVITY_CAP`), phase durations and the dialogue
-pacing.
+Every gameplay number lives in **`src/core/config.hpp`**, and that file belongs
+to the raylib-free core, so editing it and rebuilding takes seconds (no raylib
+recompile).
 
-Change a number, then run `cashyphus_tests`: it prints the climb times at 6, 4
-and 3 presses/second, plus the high-water mark a pure key-masher can reach, so
-you can see exactly what a tuning change did before playing.
+### The tuning loop
+
+```bash
+$EDITOR src/core/config.hpp
+cmake --build --preset debug -j && ./build/debug/cashyphus_tests   # numbers
+./build/debug/cashyphus                                            # feel
+```
+
+**The test binary is the tuning instrument.** As well as pass/fail it prints the
+measurements you need to judge a change without guessing:
+
+- climb time at **6, 4 and 3 presses per second** (a quick, a moderate and a slow
+  player). If any of these stops finishing, you have introduced a softlock;
+- the **high-water mark a pure key-masher reaches** (it must stay far below 1.0);
+- **stamina cost per push** and **grip drained per second**, young vs aged;
+- **grip spent vs earned per rest cycle**, for all four ages;
+- **progress gained in 60 s during the final years** (the dead-end check).
+
+### Baseline to compare against
+
+| Measurement | Current value |
+|---|---|
+| Climb @6 / @4 / @3 presses per second | 55.9 s / 56.7 s / 65.8 s |
+| Time per quarter (Youth / Adult / Old / Final) | 3.3 / 9.9 / 14.2 / 28.5 s |
+| Masher high-water mark | 0.30 of the hill |
+| Stamina per push, young to aged | 0.058 to 0.103 |
+| Grip drained per second, young to aged | 0.26 to 0.36 |
+| Grip spent vs earned, final years | 0.49 vs 0.63 |
+
+### What each knob does
+
+**Overall pace**
+
+| Knob | Now | Effect |
+|---|---|---|
+| `PUSH_IMPULSE` | `0.027` | progress/s added per accepted press. The main dial for how long a life takes. |
+| `PUSH_COST` | `0.060` | stamina per press. Higher gives shorter bursts and more resting. |
+| `PUSH_COOLDOWN` | `0.13` | minimum gap between accepted presses (caps you at ~7.7/s). |
+| `STAMINA_REGEN_BRACE` | `0.70` | refill rate while bracing. Raising it shortens lives. |
+
+**Keeping mash-spamming dead**
+
+| Knob | Now | Effect |
+|---|---|---|
+| `STAMINA_MIN_FACTOR` | `0.05` | power of a push at zero stamina. This is the whole reason mashing fails; nudge it towards `1.0` and endless pressing wins again. |
+| `PUSH_COOLDOWN` | `0.13` | also limits how much a fast masher can gain. |
+
+**How hard the hill is**
+
+| Knob | Now | Effect |
+|---|---|---|
+| `GRAVITY` | `0.012` | downhill pull. Higher makes the ball roll back faster and further. |
+| `SLOPE_GROWTH` | `0.50` | how much steeper the hill becomes with progress. |
+| `DAMPING` | `0.90` | rolling friction. Lower lets the ball coast longer. |
+| `MAX_SPEED` | `0.150` | speed clamp, in both directions. |
+| `BRACE_ACCEL` | `0.35` | how firmly bracing kills momentum. |
+| `GRIP_DRAIN` / `GRIP_REGEN` | `0.26` / `0.62` | how long you can hold the ball, and how fast grip returns. |
+| `GRIP_RECOVER_THRESHOLD` | `0.25` | grip needed after a slip before you can brace again. |
+
+**Ageing** (each array reads Youth, Adult, Old, Final)
+
+| Knob | Now | Effect |
+|---|---|---|
+| `AGE_FACTOR` | `1.00 0.96 0.92 0.86` | raw push power |
+| `AGE_STAMINA_EFF` | `1.00 0.86 0.72 0.58` | divides the stamina a push costs, multiplies the refill rate |
+| `AGE_GRIP_EFF` | `1.00 0.90 0.80 0.72` | divides grip drain, multiplies grip recovery |
+| `STAGE_YOUTH_END` / `_ADULT_END` / `_OLD_END` | `0.25 / 0.50 / 0.75` | where each life stage begins along the hill |
+| `AGE_START` / `AGE_END` | `18` / `80` | what the `AGE` counter reads at the bottom and the summit |
+
+**Each cycle getting harder**
+
+| Knob | Now | Effect |
+|---|---|---|
+| `CYCLE_GRAVITY_STEP` | `0.080` | +8% downhill pull per incarnation |
+| `CYCLE_GRAVITY_CAP` | `5` | stops the ramp after the 6th life (+40%) so it can never become unwinnable |
+
+**Narrative pacing**
+
+| Knob | Now | Effect |
+|---|---|---|
+| `CHOICE_AFTER_LIVES` | `4` | lives before the keep-pushing / walk-away choice appears |
+| `LINE_MIN_TIME` | `3.5` | minimum spacing between the ball's ambient lines |
+| `IDLE_COMPLAINT_AFTER` | `2.5` | how long you can stop pushing before it starts nagging |
+| `DUR_COLLAPSE` / `_CELEBRATE` / `_SILENCE` / `_ROLLDOWN` / `_WALKIN` / `_WALKAWAY` | `2.0 / 1.6 / 1.2 / 2.0 / 1.5 / 6.0` | length of each story beat, in seconds |
+
+**Presentation** (not gameplay): `VIRTUAL_W` / `VIRTUAL_H` (320x180), `HILL_LEN`,
+`BALL_RADIUS`. Note `BALL_RADIUS` also feeds `ROLL_DEG_PER_PROGRESS`, so changing
+it alters how fast the ball visibly spins as well as how big it looks.
+
+### Recipes
+
+**Lives are too long or too short.** Move `PUSH_IMPULSE` about 10% at a time.
+Raising `STAMINA_REGEN_BRACE` also shortens lives, by shortening the rests. Do
+*not* raise the base regen to cure a slow *late* climb: it buffs the young and
+the old alike and flattens the ageing curve. That exact mistake was made once
+already and made the game feel like ageing did nothing.
+
+**Ageing should bite harder.** Lower `AGE_STAMINA_EFF[2]` and `[3]` (try `0.50`).
+Leave `AGE_GRIP_EFF` alone and re-run the tests; the rest-cycle check will tell
+you when you have gone too far.
+
+**A life never finishes, or the final years are impossible.** You will see the
+`every life can reach the summit` or `every age can complete a rest cycle`
+checks fail. Undo the last change, or buy headroom with a higher `GRIP_REGEN` or
+`STAMINA_REGEN_BRACE`.
+
+**Later incarnations should be harder.** Raise `CYCLE_GRAVITY_STEP`. It is capped
+by `CYCLE_GRAVITY_CAP` so the ramp can never make a climbing state unwinnable.
+
+**I want mashing to be viable again.** Raise `STAMINA_MIN_FACTOR` towards `1.0`.
+The `mashing cannot substitute for resting` check will start failing, which is
+that test doing its job.
+
+**Shorter or longer story beats.** The `DUR_*` values, in seconds.
+
+### What the tests will stop you doing
+
+The suite is deliberately opinionated about a few properties, so a bad value
+fails loudly instead of quietly ruining the game:
+
+- **No softlocks.** Every life must finish at 6, 4 and 3 presses per second.
+- **Mashing must not work.** Pressing on every frame for ten minutes must peak
+  below half the hill, with stamina pinned at zero.
+- **Push rate stays capped.** 60 frame-perfect presses in one second must yield
+  only about 5 to 10 accepted pushes.
+- **Ageing is monotonic and never reverses.** Losing ground never gives years back.
+- **Ageing is steep but survivable.** Final years: cost >=1.5x, refill <=0.65x,
+  grip drain >=1.25x, grip recovery <=0.80x, and both arrays strictly decreasing.
+- **Every age can complete a rest cycle.** Grip earned while pushing must cover
+  grip spent while bracing at all four ages. This is the constraint that stops
+  the two age penalties from compounding into an impossible climb, and it is the
+  one to watch when tuning anything age- or grip-related.
+- **The final years still gain ground**, rather than stalling in a slip loop.
+- **The ball rolls the right way.** Positive spin is clockwise on screen.
 
 ---
 

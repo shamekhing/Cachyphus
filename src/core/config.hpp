@@ -71,7 +71,7 @@ constexpr float AGE_FACTOR[4] = { 1.00f, 0.96f, 0.92f, 0.86f };
 // how long the ball can be held).
 //
 // By the final years, compared with youth, a shove costs ~72% more stamina,
-// the tank refills ~72% slower, grip drains ~39% faster and recovers ~39%
+// the tank refills ~42% slower, grip drains ~39% faster and recovers ~28%
 // slower. The rhythm goes from long bursts and short holds to short bursts
 // that need long holds, which is what "older and weaker" has to feel like.
 //
