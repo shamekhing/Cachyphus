@@ -116,6 +116,7 @@
       cursor: pointer;
     }
     #start:active { background: #221d2b; }
+    #start:disabled { opacity: 0.45; cursor: default; }
 
     #hint {
       position: fixed;
@@ -157,6 +158,13 @@
     var canvas   = document.getElementById('canvas');
     var logTail  = [];
 
+    // The start button stays dead until the engine is up. Letting it hide the
+    // panel early would swallow the first press, which is the one that has to
+    // leave the title screen.
+    var ready    = false;
+    var startBtn = document.getElementById('start');
+    if (startBtn) startBtn.disabled = true;
+
     function hidePanel() { if (panel) panel.classList.add('hidden'); }
     function panelVisible() { return panel && !panel.classList.contains('hidden'); }
 
@@ -188,9 +196,16 @@
     });
 
     // Defined before the loader script below so the runtime picks it up.
+    //
+    // `canvas` is not optional: Emscripten's GLFW init does
+    // Module["canvas"].addEventListener(...), and without it that throws, main()
+    // never runs, and the page shows a black canvas with no error anywhere.
     var Module = {
+      canvas: document.getElementById('canvas'),
       onRuntimeInitialized: function () {
+        ready = true;
         if (statusEl) statusEl.textContent = 'ready';
+        if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'TAP TO PLAY'; }
       },
       onAbort: function (what) {
         showError('Aborted: ' + what);
@@ -301,14 +316,16 @@
       }
     }
 
-    var startBtn = document.getElementById('start');
     if (startBtn) {
       startBtn.addEventListener('click', function () {
+        if (!ready) return;      // cannot normally happen: the button is disabled
         hidePanel();
-        goFullscreen();     // a click is the user gesture browsers require
-        // The title screen is waiting for a press, so give it one.
+        // The title screen is waiting for a press, so give it one. This is sent
+        // before asking for fullscreen: the resize that goes with it has been
+        // observed to swallow a key sent alongside it.
         sendKey('keydown', KEY_SPACE);
         setTimeout(function () { sendKey('keyup', KEY_SPACE); }, TAP_MS);
+        setTimeout(goFullscreen, 400);
       });
     }
 

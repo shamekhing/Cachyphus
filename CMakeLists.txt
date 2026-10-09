@@ -94,10 +94,13 @@ if(CASHYPHUS_BUILD_GAME)
 
     if(EMSCRIPTEN)
         # MINIFY_HTML=0 avoids a hard dependency on html-minifier-terser, which
-        # is frequently absent on minimal Emscripten installs.
+        # is frequently absent on minimal Emscripten installs. ASYNCIFY is
+        # required: raylib's web audio spins on emscripten_sleep() while the
+        # Web Audio context initialises, and the comment in miniaudio itself says
+        # that call is why the build needs -sASYNCIFY.
         set_target_properties(cashyphus PROPERTIES
             SUFFIX ".html"
-            LINK_FLAGS "-sUSE_GLFW=3 -sASSERTIONS=1 -sALLOW_MEMORY_GROWTH=1 -sMINIFY_HTML=0 --shell-file ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html")
+            LINK_FLAGS "-sUSE_GLFW=3 -sASSERTIONS=1 -sALLOW_MEMORY_GROWTH=1 -sASYNCIFY -sMINIFY_HTML=0 --shell-file ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html")
         # Relink when the HTML shell changes.
         set_property(TARGET cashyphus APPEND PROPERTY
             LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html")
