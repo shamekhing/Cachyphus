@@ -1,8 +1,10 @@
 # ===========================================================================
 #  CASHYPHUS
-#  The game ships from source alone: every sprite and every sound is generated
-#  in code, so there are deliberately NO binary assets in this repository.
-#  Anything listed here is a build artefact or a local development by-product.
+#  Every sprite and every sound is still generated in code. The single
+#  committed asset is the pixel font in assets/fonts/, which is baked into a
+#  C++ table at authoring time (tools/gen_font.py) and so never has to ship
+#  next to the binary. Anything listed here is a build artefact or a local
+#  development by-product.
 # ===========================================================================
 
 # --- Build trees -----------------------------------------------------------

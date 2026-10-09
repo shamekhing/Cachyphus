@@ -12,6 +12,7 @@
 #include "core/game_state.hpp"
 #include "core/palette.hpp"
 #include "raylib.h"
+#include "render/font.hpp"
 #include "render/hud.hpp"
 #include "render/pixelart.hpp"
 #include "render/scene.hpp"
@@ -216,9 +217,9 @@ int main(int argc, char** argv) {
     SetWindowMinSize(VIRTUAL_W * 2, VIRTUAL_H * 2);
     SetTargetFPS(opts.capture ? 0 : 60);
 
-    // Keep the default font crisp when scaled with the rest of the scene.
-    Font def = GetFontDefault();
-    SetTextureFilter(def.texture, TEXTURE_FILTER_POINT);
+    // The whole UI draws with a real 8px bitmap face instead of raylib's
+    // smooth default, which is what makes the interface read as 16-bit.
+    art::text::load();
 
     // 320x180 render target, integer-scaled to the window.
     RenderTexture2D target = LoadRenderTexture(VIRTUAL_W, VIRTUAL_H);
@@ -317,6 +318,7 @@ int main(int argc, char** argv) {
     synth.shutdown();
     CloseAudioDevice();
     sprites.unload();
+    art::text::unload();
     UnloadRenderTexture(target);
     CloseWindow();
     return 0;

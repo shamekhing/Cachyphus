@@ -5,6 +5,7 @@
 
 #include "core/config.hpp"
 #include "core/roll.hpp"
+#include "render/font.hpp"
 #include "render/pixelart.hpp"
 
 namespace cashyphus::scene {
@@ -47,12 +48,14 @@ float cameraX(const Game& g) {
 }
 
 // =============================================================================
-//  Text helpers (default font, point filtered so it stays crisp)
+//  Text helpers -- every one of them goes through the baked 8px pixel face.
 // =============================================================================
-void text(const char* s, int x, int y, Color c) { DrawText(s, x, y, 10, c); }
-int  textWidth(const char* s) { return MeasureText(s, 10); }
+void text(const char* s, int x, int y, Color c) {
+    art::text::draw(s, x, y, art::text::SIZE_SMALL, c);
+}
+int  textWidth(const char* s) { return art::text::width(s, art::text::SIZE_SMALL); }
 void textCentered(const char* s, int y, Color c) {
-    DrawText(s, (cfg::VIRTUAL_W - MeasureText(s, 10)) / 2, y, 10, c);
+    art::text::drawCenter(s, y, art::text::SIZE_SMALL, c);
 }
 
 namespace {
@@ -344,7 +347,12 @@ void drawCharacter(const Game& g, const SpriteBank& sb, const Palette& pal, floa
 
 // =============================================================================
 //  Speech bubble
+//
+//  The ball talks a lot and the brief insists the bubble stays small, so the
+//  text wraps rather than stretching the box across the screen.
 // =============================================================================
+constexpr int MAX_BUBBLE_W = 250;
+
 void speechBubble(const char* text, int cx, int cy, const Palette& pal, int reveal) {
     if (text == nullptr) return;
 
@@ -357,8 +365,36 @@ void speechBubble(const char* text, int cx, int cy, const Palette& pal, int reve
     std::memcpy(buf, text, static_cast<std::size_t>(len));
     buf[len] = '\0';
 
-    const int w = MeasureText(buf, 10) + 10;
-    const int h = 18;
+    // The baked face advances a full 8px per character, so several of the
+    // ball's longer lines would run clean off the screen unwrapped.
+    constexpr int MAX_CHARS = (MAX_BUBBLE_W - 10) / art::text::CELL_W;
+    constexpr int MAX_LINES = 3;
+    char lines[MAX_LINES][128] = {};
+    int  nlines = 1;
+    int  col    = 0;
+    for (const char* p = buf; *p != '\0';) {
+        const char* ws = p;
+        while (*p != '\0' && *p != ' ') ++p;
+        const int wlen = static_cast<int>(p - ws);
+        while (*p == ' ') ++p;
+
+        if (col > 0 && col + 1 + wlen > MAX_CHARS && nlines < MAX_LINES) {
+            ++nlines;
+            col = 0;
+        }
+        if (col > 0) lines[nlines - 1][col++] = ' ';
+        for (int i = 0; i < wlen && col < 127; ++i) lines[nlines - 1][col++] = ws[i];
+        lines[nlines - 1][col] = '\0';
+    }
+
+    int w = 0;
+    for (int i = 0; i < nlines; ++i) {
+        const int lw = art::text::width(lines[i], art::text::SIZE_SMALL);
+        if (lw > w) w = lw;
+    }
+    w += 10;
+    const int h = nlines * art::text::CELL_H + 6;
+
     int bx = cx - w / 2;
     int by = cy - h - 8;
     if (bx < 2) bx = 2;
@@ -373,7 +409,12 @@ void speechBubble(const char* text, int cx, int cy, const Palette& pal, int reve
                  { static_cast<float>(cx) + 4.0f, static_cast<float>(by + h) },
                  { static_cast<float>(cx),        static_cast<float>(by + h + 6) },
                  toColor(pal.bubbleEdge));
-    DrawText(buf, bx + 5, by + 5, 10, toColor(pal.text));
+
+    const Color ink = toColor(pal.text);
+    for (int i = 0; i < nlines; ++i) {
+        art::text::draw(lines[i], bx + 5, by + 3 + i * art::text::CELL_H,
+                        art::text::SIZE_SMALL, ink);
+    }
 }
 
 // =============================================================================

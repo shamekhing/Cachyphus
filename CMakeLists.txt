@@ -83,6 +83,7 @@ if(CASHYPHUS_BUILD_GAME)
         src/render/scene.cpp
         src/render/hud.cpp
         src/render/sprites.cpp
+        src/render/font.cpp
         src/audio/synth.cpp
     )
     target_link_libraries(cashyphus PRIVATE cashyphus_core ${CASHYPHUS_RAYLIB})
