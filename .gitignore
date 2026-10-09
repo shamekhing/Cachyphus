@@ -74,3 +74,7 @@ sprites_preview*.png
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# --- Python (the asset bakers in tools/ are the only Python here) -----------
+__pycache__/
+*.py[cod]
