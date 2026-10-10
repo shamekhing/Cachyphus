@@ -113,7 +113,7 @@ void drawChoice(const Palette& pal) {
 }
 
 void drawWalkAwayText(const Game& g, const Palette& pal) {
-    if (g.walkT() > 0.55f && g.walkT() < 0.96f) {
+    if (g.walkT() > 0.45f && g.walkT() < 0.96f) {
         const int top = frameTop();
         DrawRectangle(0, 146 + top, VIRTUAL_W, 26, Color{ 12, 10, 16, 150 });
         const Color ink = toColor(pal.uiText);

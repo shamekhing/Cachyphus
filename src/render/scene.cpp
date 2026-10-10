@@ -491,10 +491,16 @@ float characterScreenX(const Game& g) {
 
     switch (g.phase()) {
         case Phase::WalkAway: {
-            // Walk away downhill and to the left, stopping short of the edge so
-            // the player can still watch them leave.
-            const float walk = bx - back - g.walkT() * 96.0f;
-            return clampf(walk, 14.0f, VIRTUAL_W - 44.0f);
+            // Walk away downhill and to the left -- the way they arrived -- and
+            // keep going until they are out of the frame, leaving the ball behind
+            // on the hill. This used to be clampf(walk, 14, VIRTUAL_W - 44), and 14
+            // is where the walk already starts from, so the character stood still
+            // and bobbed for the whole ending: the walk was in the code and never
+            // once on the screen.
+            const float gone = clampf((g.walkT() - WALK_LEAVE_AT) /
+                                      (WALK_LEAVE_BY - WALK_LEAVE_AT), 0.0f, 1.0f);
+            const float out  = (bx - back) + static_cast<float>(CHAR_W) + 4.0f;
+            return bx - back - gone * out;
         }
         case Phase::WalkIn: {
             const float tin = clampf(g.phaseTime() / DUR_WALKIN, 0.0f, 1.0f);

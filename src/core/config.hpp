@@ -185,8 +185,19 @@ constexpr float DUR_CELEBRATE = 1.6f;
 constexpr float DUR_SILENCE   = 1.2f;
 constexpr float DUR_ROLLDOWN  = 2.0f;
 constexpr float DUR_WALKIN    = 1.5f;
-constexpr float DUR_WALKAWAY  = 6.0f;
-constexpr float DUR_WALK_LINE = 1.2f;   // spacing of the ball's panicked lines
+// --- The ending ---------------------------------------------------------------
+// The ending is the one stretch where the player is asked to read rather than to
+// act, so it is paced for reading. The speech bubble types at 34 characters a
+// second, so the longest of the ball's lines ("What about everything we worked
+// for?", 37 characters) needs 1.1s just to appear: at 3s a line there is time to
+// read it rather than to watch it flash past. Five lines and the ball's cheerful
+// turn at the end is 17s, and the character spends the first couple of seconds of
+// that walking out of shot, leaving the ball behind on the hill.
+constexpr float DUR_WALKAWAY    = 17.0f;
+constexpr float DUR_WALK_LINE   = 3.0f;   // reveal and read one panicked line
+constexpr float WALK_LEAVE_AT   = 0.25f;  // they start to go as the ball asks why
+constexpr float WALK_LEAVE_BY   = 0.40f;  // ...and are out of the frame by here
+constexpr float DUR_CREDITS_MIN = 3.5f;   // the credits hold before a press leaves
 
 // --- Small helpers ------------------------------------------------------------
 inline float clampf(float v, float lo, float hi) {

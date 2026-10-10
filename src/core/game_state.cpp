@@ -214,8 +214,9 @@ void Game::update(const Input& in, float dt) {
             }
             // The twist: one person leaving changes nothing. The moment they
             // are out of earshot the ball is cheerful again, selling the same
-            // promise to whoever comes next.
-            if (walkT_ > 0.85f && walkLineIndex_ < lines::walkLeaveCount) {
+            // promise to whoever comes next. Late enough that the last of the
+            // panicked lines has been read.
+            if (walkT_ > 0.88f && walkLineIndex_ < lines::walkLeaveCount) {
                 walkLineIndex_ = lines::walkLeaveCount;
                 setLine(lines::walkGreeting, false);
             }
@@ -223,7 +224,10 @@ void Game::update(const Input& in, float dt) {
             break;
 
         case Phase::Credits:
-            if (in.anyPressed && phaseTime_ > 2.0f) {
+            // Give the credits a moment before a stray press leaves them: the
+            // whole screen is text and it used to exit after two seconds, which is
+            // not long enough to read what it says.
+            if (in.anyPressed && phaseTime_ > DUR_CREDITS_MIN) {
                 // Back to the hill, as if it never ended.
                 enterPhase(Phase::Title);
             }

@@ -329,7 +329,11 @@ void frameStep() {
 
     if (a.opts.capture) {
         const bool phaseChanged = a.game.phase() != a.cap.lastPhase;
-        const bool periodic = a.game.phase() == Phase::Climb && a.cap.sinceShotSteps > 15 * 60;
+        // A shot every fifteen seconds of climb, and every 1.5s of the ending --
+        // the walk-away is over in a few seconds and there is no other way to see
+        // whether the character actually moves.
+        const bool periodic = (a.game.phase() == Phase::Climb && a.cap.sinceShotSteps > 15 * 60) ||
+                              (a.game.phase() == Phase::WalkAway && a.cap.sinceShotSteps > 90);
         if (phaseChanged || periodic) {
             char name[512];
             std::snprintf(name, sizeof(name), "%s_%02d.png", a.opts.prefix.c_str(),
