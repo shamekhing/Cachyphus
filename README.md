@@ -13,6 +13,11 @@ you a choice: **keep pushing, or walk away.**
 
 Built with **C++17 + raylib**. Sprites are generated in code; the soundtrack uses edited CC0 currency recordings.
 
+[![CASHYPHUS: the ball saying "You've come too far to stop now." while a person pushes it up the hill](assets/screenshots/climb.png)](https://shamekhing.github.io/Cachyphus/)
+
+**▶ [Play it in your browser](https://shamekhing.github.io/Cachyphus/)** — nothing to
+install, ten seconds to learn, three lifetimes to the choice.
+
 ---
 
 ## Controls
@@ -38,6 +43,8 @@ into SPACE and a press-and-hold into SHIFT and never reports the pointer at all,
 so the gesture is what answers it: **tap keeps pushing, hold walks away**. A click
 that misses both buttons answers nothing, so a stray click cannot decide the
 ending for you.
+
+![The choice screen: a message box asking "Well, shall we?" over two buttons, KEEP PUSHING and WALK AWAY](assets/screenshots/choice.png)
 
 The two verbs and *when* to use them are the entire game. Topping up stamina
 requires standing still, which the ball loudly objects to.
@@ -229,6 +236,7 @@ src/
     sim.hpp/.cpp         ball velocity, stamina, grip, aging
     game_state.hpp/.cpp  the CLIMB -> death -> reincarnation loop
     dialogue.hpp/.cpp    the ball's lines, banded by life stage
+    choice_box.hpp/.cpp  the final choice: the message box, its two buttons, the hit test
     palette.hpp/.cpp     warm-youth -> cold-summit colour model
     music.hpp/.cpp       the arrangement curve: how worn the climb theme is
   render/     raylib drawing
@@ -246,6 +254,8 @@ src/
   main.cpp      window, 180x360 portrait render target, input, fixed-timestep loop
 assets/audio/   the CC0 recordings the effects and the ending's bed are cut from,
                 the edited effects, the walk-away ambience, and SOURCES.md
+assets/screenshots/  the two pictures in this file, picked from a capture run by
+                tools/make_readme_shots.py rather than cropped by hand
 tests/          headless test binary
 tools/          offline asset bakers and preview dumps
 web/            Emscripten HTML shell
@@ -344,7 +354,15 @@ PNG on every phase change, so the narrative flow can be inspected at a glance:
 
 ```bash
 mkdir -p shots && cd shots
-../build/debug/cashyphus --capture shot
+../build/debug/cashyphus --capture shot > capture.log
+```
+(The log is what says which PNG is which phase; the picker below reads it.)
+
+**README screenshots**   picks the two pictures in this file out of such a run, by
+phase and progress:
+
+```bash
+python3 tools/make_readme_shots.py shots/capture.log assets/screenshots
 ```
 
 **Audio decode**   turns any audio raylib understands (OGG, MP3, FLAC, WAV) into
