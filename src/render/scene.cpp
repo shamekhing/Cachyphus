@@ -20,31 +20,30 @@ using art::toColor;
 
 // =============================================================================
 //  Geometry
+//
+//  No camera scroll: the hill itself is fixed across the portrait frame and the
+//  ball travels along it. Everything else (parallax, clouds) moves vertically
+//  with progress, so height is what the screen is telling you about.
 // =============================================================================
-float World::hillY(float x) {
-    const float t = clampf(x / HILL_LEN, 0.0f, 1.0f);
-    return BASE_Y - RISE * std::pow(t, 1.35f);
+float World::groundY(float screenX) {
+    const float t = clampf(screenX / VIRTUAL_W, 0.0f, 1.5f);
+    return GROUND_BASE - GROUND_RISE * std::pow(t, GROUND_CURVE);
 }
 
-float World::ballWorldX(float progress) {
-    return clampf(progress, 0.0f, 1.0f) * HILL_LEN;
+float World::ballX(float progress) {
+    const float p = clampf(progress, 0.0f, 1.0f);
+    return BALL_X0 + (BALL_X1 - BALL_X0) * p;
 }
 
-namespace {
-constexpr float CAM_MAX_X = World::HILL_LEN - 224.0f;   // keep the summit in view
+float World::ballY(float progress) {
+    return groundY(ballX(progress)) - BALL_R;
 }
 
-float cameraX(const Game& g) {
-    const float ballX = World::ballWorldX(g.ballProgress());
-    // The lower clamp is negative so that at progress 0 the ball still sits
-    // comfortably inside the frame rather than hanging off the left edge.
-    constexpr float CAM_MIN_X = -96.0f;
-    if (g.phase() == Phase::WalkAway) {
-        // The camera follows the person walking down and away from the hill.
-        const float walkX = ballX - 44.0f - g.walkT() * 520.0f;
-        return clampf(walkX - 168.0f, -520.0f, CAM_MAX_X);
-    }
-    return clampf(ballX - 96.0f, CAM_MIN_X, CAM_MAX_X);
+float World::contactY(float screenX) { return groundY(screenX); }
+
+float climbOffset(const Game& g) {
+    if (g.phase() == Phase::WalkAway || g.phase() == Phase::Credits) return 0.0f;
+    return clampf(g.ballProgress(), 0.0f, 1.0f);
 }
 
 // =============================================================================
@@ -76,8 +75,8 @@ void drawSky(const Palette& pal) {
 
 void drawSun(const Palette& pal) {
     const Color c = toColor(pal.sun);
-    DrawCircle(248, 40, 13, c);
-    DrawCircle(248, 40, 9, Color{ c.r, c.g, c.b, 200 });
+    DrawCircle(142, 44, 11, c);
+    DrawCircle(142, 44, 7, Color{ c.r, c.g, c.b, 200 });
 }
 
 // -----------------------------------------------------------------------------
@@ -87,70 +86,83 @@ void drawSun(const Palette& pal) {
 //  half of a 320x180 frame is a flat wash of sky, which is most of why the
 //  scene read as empty.
 // -----------------------------------------------------------------------------
-void drawClouds(const Palette& pal, float camX) {
+// `rise` is 0..1 progress: the clouds sink through the sky as the ball climbs,
+// which is what makes gaining height legible on a tall screen. They are drawn
+// before the hill, so anything below the ground line is covered by terrain.
+void drawClouds(const Palette& pal, float rise) {
     // Mixed from the sky's own colour rather than hard-coded, so the clouds go
     // pale and cold along with everything else on the way to the summit.
     const Color body = lerpColor(toColor(pal.skyTop), toColor(pal.uiText), 0.52f);
 
-    // They drift on their own as well as scrolling, which is what stops the sky
-    // looking like a backdrop that has been pinned to the camera.
-    const float drift = static_cast<float>(GetTime()) * 2.5f;
+    const float drift = static_cast<float>(GetTime()) * 3.0f;
+    constexpr float BAND_TOP = 18.0f;
+    constexpr float BAND_H   = 274.0f;
 
-    for (int i = 0; i < 6; ++i) {
-        // Each cloud gets its own span so they never settle into a pattern.
-        const float span = 190.0f + static_cast<float>(i) * 53.0f;
-        const float wrap = span + VIRTUAL_W;
-        float x = std::fmod(static_cast<float>(i) * 113.0f + camX * 0.07f + drift, wrap) - 60.0f;
+    for (int i = 0; i < 7; ++i) {
+        const float x = std::fmod(static_cast<float>(i * 53) + drift,
+                                  VIRTUAL_W + 60.0f) - 40.0f;
+        const float baseY = 26.0f + static_cast<float>((i * 67) % 210);
+
+        // Drop as you climb, wrapped so a cloud leaves the bottom and returns at
+        // the top rather than vanishing for the rest of the run.
+        float y = std::fmod(baseY + rise * BAND_H - BAND_TOP, BAND_H);
+        if (y < 0.0f) y += BAND_H;
+        y += BAND_TOP;
 
         const int xi = static_cast<int>(x);
-        const int y  = 20 + (i % 3) * 16;      // clear of the status bar
-        const int s  = (i % 2 == 0) ? 1 : 2;
+        const int yi = static_cast<int>(y);
+        const int s  = (i % 3 == 0) ? 2 : 1;
 
         // A puff: a flat base with three overlapping blobs sitting on it.
-        DrawRectangle(xi, y + 4 * s, 17 * s, 3 * s, body);
-        DrawCircle(xi + 4 * s,  y + 4 * s, 3.0f * s, body);
-        DrawCircle(xi + 9 * s,  y + 3 * s, 4.0f * s, body);
-        DrawCircle(xi + 14 * s, y + 4 * s, 3.0f * s, body);
+        DrawRectangle(xi, yi + 4 * s, 14 * s, 3 * s, body);
+        DrawCircle(xi + 4 * s,  yi + 4 * s, 3.0f * s, body);
+        DrawCircle(xi + 8 * s,  yi + 3 * s, 4.0f * s, body);
+        DrawCircle(xi + 12 * s, yi + 4 * s, 3.0f * s, body);
     }
 }
 
-void drawParallax(const Palette& pal, float camX) {
-    // Two layers of triangular mountains, scrolling at different rates.
+void drawParallax(const Palette& pal, float rise) {
+    // Two rows of mountains standing on a horizon that sinks as the ball climbs.
+    // On a tall screen, height is told by the background falling away rather
+    // than by scrolling sideways, so both layers drop with progress.
     const Color far  = toColor(pal.mountainFar);
     const Color near = toColor(pal.mountainNear);
 
-    const float off1 = std::fmod(camX * 0.15f, 96.0f);
-    for (int i = -1; i < 6; ++i) {
-        const float bx = static_cast<float>(i * 96) - off1;
-        DrawTriangle({ bx,         110.0f },
-                     { bx + 52.0f,  62.0f },
-                     { bx + 104.0f, 110.0f }, far);
+    const float sink = rise * 150.0f;
+
+    const float h1 = 172.0f + sink;
+    for (int i = -1; i < 5; ++i) {
+        const float bx = static_cast<float>(i * 76) - 34.0f;
+        DrawTriangle({ bx,         h1 },
+                     { bx + 38.0f, h1 - 48.0f },
+                     { bx + 76.0f, h1 }, far);
     }
 
-    const float off2 = std::fmod(camX * 0.32f, 74.0f);
-    for (int i = -1; i < 7; ++i) {
-        const float bx = static_cast<float>(i * 74) - off2;
-        DrawTriangle({ bx,         128.0f },
-                     { bx + 38.0f,  86.0f },
-                     { bx + 76.0f, 128.0f }, near);
+    const float h2 = 216.0f + sink;
+    for (int i = -1; i < 6; ++i) {
+        const float bx = static_cast<float>(i * 58) - 22.0f;
+        DrawTriangle({ bx,         h2 },
+                     { bx + 29.0f, h2 - 42.0f },
+                     { bx + 58.0f, h2 }, near);
     }
 }
 
-// The hill itself: one vertical strip per screen column.
-void drawHill(const Palette& pal, float camX) {
+// The hill: one vertical strip per screen column, filling everything below the
+// diagonal surface. The surface rises from the bottom-left corner to the
+// top-right, so the ball travelling along it climbs the frame. It is filled in
+// two tones -- a lit band hugging the surface and a darker body beneath -- so
+// the slope reads as solid rather than a flat slab.
+void drawHill(const Palette& pal) {
     const Color nearC = toColor(pal.hillNear);
-    const Color farC  = toColor(pal.hillFar);
     const Color edge  = toColor(pal.hillEdge);
     const Color path  = toColor(pal.path);
+    const Color body  = lerpColor(nearC, toColor(pal.outline), 0.42f);
 
-    // A softer ridge behind the main slope.
     for (int sx = 0; sx < VIRTUAL_W; ++sx) {
-        const float wy = World::hillY(camX + sx) - 16.0f;
-        DrawLine(sx, static_cast<int>(wy), sx, VIRTUAL_H, farC);
-    }
-    for (int sx = 0; sx < VIRTUAL_W; ++sx) {
-        const int y = static_cast<int>(World::hillY(camX + sx));
-        DrawLine(sx, y, sx, VIRTUAL_H, nearC);
+        const int y  = static_cast<int>(World::groundY(static_cast<float>(sx)));
+        const int cl = std::min(y + 22, VIRTUAL_H);
+        DrawLine(sx, y,  sx, cl,        nearC);   // lit surface band
+        DrawLine(sx, cl, sx, VIRTUAL_H, body);    // darker body beneath
         DrawPixel(sx, y, edge);
         DrawPixel(sx, y + 1, path);
     }
@@ -329,15 +341,31 @@ void drawBall(float cx, float cy, float r, float spinDeg, BallMood mood,
 // -----------------------------------------------------------------------------
 //  The human character
 // -----------------------------------------------------------------------------
-float characterWorldX(const Game& g) {
-    const float ballX = World::ballWorldX(g.ballProgress());
+// Where the person stands on screen. Measured as an arc length along the slope
+// rather than a horizontal gap: the slope steepens to the right, and a flat
+// horizontal offset would leave the character separated from the ball by half
+// the screen on the steep final stretch.
+float characterScreenX(const Game& g) {
+    const float bx = World::ballX(g.ballProgress());
+
+    // d(ground)/dx at the ball, from the curve.
+    const float t    = clampf(bx / VIRTUAL_W, 0.001f, 1.5f);
+    const float g_   = -World::GROUND_RISE * World::GROUND_CURVE *
+                       std::pow(t, World::GROUND_CURVE - 1.0f) / VIRTUAL_W;
+    const float back = 32.0f / std::sqrt(1.0f + g_ * g_);
+
     switch (g.phase()) {
-        case Phase::WalkAway: return ballX - 44.0f - g.walkT() * 520.0f;
-        case Phase::WalkIn: {
-            const float t = clampf(g.phaseTime() / DUR_WALKIN, 0.0f, 1.0f);
-            return ballX - 30.0f - (1.0f - t) * 90.0f;
+        case Phase::WalkAway: {
+            // Walk away downhill and to the left, stopping short of the edge so
+            // the player can still watch them leave.
+            const float walk = bx - back - g.walkT() * 96.0f;
+            return clampf(walk, 14.0f, VIRTUAL_W - 44.0f);
         }
-        default: return ballX - 30.0f;
+        case Phase::WalkIn: {
+            const float tin = clampf(g.phaseTime() / DUR_WALKIN, 0.0f, 1.0f);
+            return bx - back - (1.0f - tin) * 74.0f;
+        }
+        default: return bx - back;   // hands on the ball, not a gap between them
     }
 }
 
@@ -353,14 +381,14 @@ Texture2D characterTexture(const Game& g, const SpriteBank& sb) {
     }
 }
 
-void drawCharacter(const Game& g, const SpriteBank& sb, const Palette& pal, float camX) {
+void drawCharacter(const Game& g, const SpriteBank& sb, const Palette& pal) {
     if (g.character() == CharState::None) return;
 
     const Texture2D tex = characterTexture(g, sb);
     if (tex.id == 0) return;
 
-    const float wx = characterWorldX(g);
-    const float groundY = World::hillY(wx);
+    const float wx = characterScreenX(g);
+    const float gy = World::groundY(wx);
 
     // A tiny bob keeps the walk from looking like a slide.
     float bob = 0.0f;
@@ -368,10 +396,10 @@ void drawCharacter(const Game& g, const SpriteBank& sb, const Palette& pal, floa
         bob = std::sin(g.phaseTime() * 12.0f) * 1.0f;
     }
 
-    const int sx = static_cast<int>(wx - camX) - CHAR_W / 2;
-    const int sy = static_cast<int>(groundY - CHAR_H + 2 + bob);
+    const int sx = static_cast<int>(wx) - CHAR_W / 2;
+    const int sy = static_cast<int>(gy - CHAR_H + 2 + bob);
 
-    DrawRectangle(sx + 2, static_cast<int>(groundY) - 1, CHAR_W - 4, 2,
+    DrawRectangle(sx + 2, static_cast<int>(gy) - 1, CHAR_W - 4, 2,
                   toColor(pal.ballShadow, 90));
 
     DrawTexture(tex, sx, sy, WHITE);
@@ -385,7 +413,7 @@ void drawCharacter(const Game& g, const SpriteBank& sb, const Palette& pal, floa
 //  The ball talks a lot and the brief insists the bubble stays small, so the
 //  text wraps rather than stretching the box across the screen.
 // =============================================================================
-constexpr int MAX_BUBBLE_W = 250;
+constexpr int MAX_BUBBLE_W = 158;   // must fit inside the 180px portrait frame
 
 void speechBubble(const char* text, int cx, int cy, const Palette& pal, int reveal) {
     if (text == nullptr) return;
@@ -455,27 +483,26 @@ void speechBubble(const char* text, int cx, int cy, const Palette& pal, int reve
 //  Whole scene
 // =============================================================================
 void draw(const Game& g, const Palette& pal, const SpriteBank& sprites) {
-    const float camX = cameraX(g);
+    const float rise = climbOffset(g);
 
     drawSky(pal);
     drawSun(pal);
-    drawClouds(pal, camX);
-    drawParallax(pal, camX);
-    drawHill(pal, camX);
+    drawClouds(pal, rise);
+    drawParallax(pal, rise);
+    drawHill(pal);
 
-    const float ballWX = World::ballWorldX(g.ballProgress());
-    const float groundY = World::hillY(ballWX);
-    const float ballSX = ballWX - camX;
-    const float ballSY = groundY - World::BALL_R;
+    const float bx = World::ballX(g.ballProgress());
+    const float by = World::ballY(g.ballProgress());   // centre, resting on the slope
+    const float gy = World::groundY(bx);
 
-    // Contact shadow on the slope.
-    DrawEllipse(static_cast<int>(ballSX), static_cast<int>(groundY) - 1,
-                24.0f, 5.0f, toColor(pal.ballShadow, 80));
+    // Contact shadow, flattened onto the slope.
+    DrawEllipse(static_cast<int>(bx), static_cast<int>(gy) - 1, 22.0f, 5.0f,
+                toColor(pal.ballShadow, 80));
 
-    drawCharacter(g, sprites, pal, camX);
+    drawCharacter(g, sprites, pal);
 
     const bool topHat = g.incarnation() >= 3;
-    drawBall(ballSX, ballSY, World::BALL_R, g.ballSpin(), g.mood(), pal, topHat, false);
+    drawBall(bx, by, World::BALL_R, g.ballSpin(), g.mood(), pal, topHat, false);
 
     // The ball always has something to say -- except on the title, on the
     // choice screen (its line is the panel header) and over the credits.
@@ -486,8 +513,8 @@ void draw(const Game& g, const Palette& pal, const SpriteBank& sprites) {
                             g.phase() != Phase::Credits;
     if (wantBubble) {
         const int reveal = static_cast<int>(g.lineAge() * 34.0f) + 1;
-        speechBubble(line, static_cast<int>(ballSX),
-                     static_cast<int>(ballSY - World::BALL_R), pal, reveal);
+        speechBubble(line, static_cast<int>(bx),
+                     static_cast<int>(by - World::BALL_R), pal, reveal);
     }
 }
 

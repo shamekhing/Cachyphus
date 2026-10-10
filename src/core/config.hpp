@@ -11,9 +11,14 @@
 
 namespace cashyphus::cfg {
 
-// --- Virtual resolution (16:9) -------------------------------------------------
-constexpr int   VIRTUAL_W = 320;
-constexpr int   VIRTUAL_H = 180;
+// --- Virtual resolution (portrait: the game is built for a phone) ------------
+// The brief recommends 320x180, but its own interface sketch draws the hill
+// rising to a summit at the TOP of the frame -- a vertical composition. That is
+// what this is: the same pixel budget, rotated, so the climb reads as climbing.
+// 180x360 is exactly 1:2, so 2x is 360x720 and modern phones letterbox by
+// only a few percent.
+constexpr int   VIRTUAL_W = 180;
+constexpr int   VIRTUAL_H = 360;
 
 // --- Fixed simulation step ----------------------------------------------------
 constexpr float FIXED_DT  = 1.0f / 60.0f;
