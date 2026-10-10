@@ -2,47 +2,31 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
-#include <functional>
+
+#include "audio/voices.hpp"
 
 namespace cashyphus::audio {
 
 namespace {
 
-constexpr int RATE = 44100;
+// The effects themselves live in audio/voices.hpp: raylib-free, so they can be
+// rendered and measured by the headless tests. This file only turns them into
+// raylib Sounds and mixes the music on top.
+using voices::Voice;
 
-// Deterministic noise so builds are reproducible.
-struct Noise {
-    std::uint32_t s = 0x1234567u;
-    float next() {
-        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
-        return static_cast<float>(static_cast<std::int32_t>(s)) / 2147483648.0f;
-    }
-};
-
-float sine(float phase)  { return std::sin(phase * 6.2831853f); }
-float square(float phase) { return phase < 0.5f ? 1.0f : -1.0f; }
-float tri(float phase)   { return 4.0f * std::fabs(phase - 0.5f) - 1.0f; }
-
-float env(float t, float dur, float attack, float release) {
-    if (t < 0.0f) return 0.0f;
-    if (t >= dur) return 0.0f;
-    const float a = attack  > 0.0f ? std::min(1.0f, t / attack) : 1.0f;
-    const float r = release > 0.0f ? std::min(1.0f, (dur - t) / release) : 1.0f;
-    return a * r;
-}
-
-Sound make( float seconds, const std::function<float(float)>& gen) {
-    const int n = static_cast<int>(seconds * RATE);
+Sound make(Voice id) {
+    const int n = static_cast<int>(voices::seconds(id) * voices::RATE);
     Wave w{};
     w.frameCount = n;
-    w.sampleRate = RATE;
+    w.sampleRate = voices::RATE;
     w.sampleSize = 16;
     w.channels   = 1;
     short* data = static_cast<short*>(MemAlloc(static_cast<unsigned int>(n) * sizeof(short)));
     for (int i = 0; i < n; ++i) {
-        const float t = static_cast<float>(i) / RATE;
-        const float v = std::clamp(gen(t), -1.0f, 1.0f);
+        // Soft clip, not hard: the mixer adds every voice together with no
+        // limiter of its own, so a peak that reaches full scale would otherwise
+        // be squared off into the crackle that reads as static.
+        const float v = std::tanh(voices::sample(id, i));
         data[i] = static_cast<short>(v * 30000.0f);
     }
     w.data = data;
@@ -75,10 +59,6 @@ bool       g_climbOn = true;
 // unity leaves room for the effects on top of it.
 constexpr float kClimbLevel = 0.70f;
 
-float noteFreq(int semitoneFromA4) {
-    return 440.0f * std::pow(2.0f, semitoneFromA4 / 12.0f);
-}
-
 // Escape motif, in semitones relative to A4. The climb theme used to be an
 // eight-step sequencer in this file as well; it is now a real composed track
 // (see assets/CREDITS.md), so only the ending is still synthesised here.
@@ -90,7 +70,7 @@ void musicCallback(void* buffer, unsigned int frames) {
         for (unsigned int i = 0; i < frames; ++i) out[i] = 0.0f;
         return;
     }
-    if (g_music.stepSamples <= 0.0) g_music.stepSamples = RATE * 0.28;
+    if (g_music.stepSamples <= 0.0) g_music.stepSamples = voices::RATE * 0.28;
 
     for (unsigned int i = 0; i < frames; ++i) {
         if (g_music.counter >= g_music.stepSamples) {
@@ -98,18 +78,20 @@ void musicCallback(void* buffer, unsigned int frames) {
             g_music.step = (g_music.step + 1) % 8;
         }
         const float t   = static_cast<float>(g_music.counter / g_music.stepSamples); // 0..1
-        const float sec = static_cast<float>(g_music.counter / RATE);                // seconds
+        const float sec = static_cast<float>(g_music.counter / voices::RATE);        // seconds
 
         float sample = 0.0f;
         if (g_music.warm) {
             // The escape motif: a plain, warm resolution, heard only once the
             // player has actually walked away.
-            const float f = noteFreq(kEscapeSteps[g_music.step]);
-            // The amplitude envelope starts at zero so per-note phase resets
-            // never click.
-            sample += 0.55f * tri(f * sec) * env(t, 1.0f, 0.02f, 0.35f);
+            const float f  = voices::noteFreq(kEscapeSteps[g_music.step]);
+            const float eg = voices::env(t, 1.0f, 0.02f, 0.35f);
+            // Both notes share that envelope. The bass used to be unenveloped,
+            // which meant its phase jumped back to zero at every step boundary
+            // -- a click every 0.28s, on a loop.
+            sample += 0.55f * voices::tri(f * sec) * eg;
             if (g_music.step % 4 == 0) {
-                sample += 0.5f * sine(noteFreq(kEscapeSteps[g_music.step] - 24) * sec);
+                sample += 0.50f * voices::sine(voices::noteFreq(kEscapeSteps[g_music.step] - 24) * sec) * eg;
             }
         } else if (g_climbOn) {
             // The baked climb theme, wearing down as incarnations pile up.
@@ -135,83 +117,17 @@ void Synth::init() {
     }
     ready_ = true;
 
-    sPush_ = make(0.20f, [](float t) {
-        Noise n; n.s = static_cast<std::uint32_t>(t * 1000000.0f) + 7u;
-        const float sweep = 170.0f - 118.0f * std::min(1.0f, t / 0.16f);
-        const float body  = sine(sweep * t) * env(t, 0.20f, 0.004f, 0.18f);
-        const float grit  = n.next() * env(t, 0.05f, 0.001f, 0.05f) * 0.5f;
-        return (body + grit) * 0.9f;
-    });
+    sPush_     = make(Voice::Push);
+    sScrape_   = make(Voice::Scrape);
+    sRattle_   = make(Voice::Rattle);
+    sBreath_   = make(Voice::Breath);
+    sJingle_   = make(Voice::Jingle);
+    sBell_     = make(Voice::Bell);
+    sCollapse_ = make(Voice::Collapse);
+    sRoll_     = make(Voice::Roll);
+    sBirds_    = make(Voice::Birds);
 
-    sScrape_ = make(0.16f, [](float t) {
-        Noise n; n.s = static_cast<std::uint32_t>(t * 900000.0f) + 31u;
-        float lp = 0.0f;
-        lp += (n.next() - lp) * 0.18f;   // crude one-pole low pass
-        return lp * env(t, 0.16f, 0.006f, 0.10f) * 0.8f;
-    });
-
-    sRattle_ = make(0.42f, [](float t) {
-        Noise n; n.s = 4242u;
-        float v = 0.0f;
-        for (int k = 0; k < 9; ++k) {
-            const float tk = 0.045f * k;
-            const float e = env(t - tk, 0.05f, 0.002f, 0.045f);
-            if (e > 0.0f) v += n.next() * e;
-        }
-        return v * 0.5f;
-    });
-
-    sBreath_ = make(0.75f, [](float t) {
-        Noise n; n.s = 999u;
-        float lp = 0.0f;
-        lp += (n.next() - lp) * 0.05f;
-        const float shape = std::sin(t / 0.75f * 3.14159f);   // in-and-out
-        return lp * shape * 0.7f;
-    });
-
-    sJingle_ = make(0.70f, [](float t) {
-        const int seq[3] = { 7, 12, 19 };   // E5, A5, E6-ish (relative to A4)
-        const int idx = t < 0.22f ? 0 : (t < 0.44f ? 1 : 2);
-        const float f = noteFreq(seq[idx]);
-        return square(f * t) * env(t - 0.22f * idx, 0.26f, 0.005f, 0.20f) * 0.5f;
-    });
-
-    sBell_ = make(1.20f, [](float t) {
-        const float a = sine(880.0f * t) * std::exp(-3.0f * t);
-        const float b = sine(1320.0f * t) * std::exp(-4.5f * t) * 0.6f;
-        const float c = sine(1760.0f * t) * std::exp(-6.0f * t) * 0.35f;
-        return (a + b + c) * 0.6f;
-    });
-
-    sCollapse_ = make(0.60f, [](float t) {
-        Noise n; n.s = 77u;
-        const float thud = sine((90.0f - 55.0f * std::min(1.0f, t / 0.3f)) * t) * std::exp(-6.0f * t);
-        const float dirt = n.next() * env(t, 0.25f, 0.002f, 0.25f) * 0.4f;
-        return (thud + dirt) * 0.9f;
-    });
-
-    sRoll_ = make(1.10f, [](float t) {
-        Noise n; n.s = 5150u;
-        float lp = 0.0f;
-        lp += (n.next() - lp) * 0.30f;
-        const float rise = std::min(1.0f, t / 0.9f);
-        return lp * rise * 0.55f;
-    });
-
-    sBirds_ = make(1.60f, [](float t) {
-        float v = 0.0f;
-        const float starts[4] = { 0.05f, 0.42f, 0.80f, 1.20f };
-        const float freqs[4]  = { 2600.0f, 3000.0f, 2400.0f, 2800.0f };
-        for (int k = 0; k < 4; ++k) {
-            const float lt = t - starts[k];
-            if (lt < 0.0f || lt > 0.25f) continue;
-            const float w = 1.0f + 0.25f * std::sin(lt * 90.0f);   // chirp wobble
-            v += sine(freqs[k] * w * lt) * env(lt, 0.25f, 0.01f, 0.18f) * 0.35f;
-        }
-        return v;
-    });
-
-    music_ = LoadAudioStream(RATE, 32, 1);
+    music_ = LoadAudioStream(voices::RATE, 32, 1);
     SetAudioStreamCallback(music_, musicCallback);
     g_music.playing = true;
     PlayAudioStream(music_);

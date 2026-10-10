@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "audio/voices.hpp"
 #include "core/dialogue.hpp"
 #include "core/game_state.hpp"
 #include "core/music.hpp"
@@ -749,11 +750,11 @@ static void test_ball_rolls_while_running_back() {
 static void test_game_walk_away() {
     section("game: walk-away ending");
     const GameRun r = runGame(ChoicePolicy::Walk, 1);
-    std::printf("  4 lives spent -> choice at incarnation %d -> walked away\n",
-                r.firstChoiceIncarnation);
+    std::printf("  %d lives spent -> choice at incarnation %d -> walked away\n",
+                CHOICE_AFTER_LIVES, r.firstChoiceIncarnation);
     CHECK(r.choiceCount == 1);
-    CHECK(r.firstChoiceIncarnation == CHOICE_AFTER_LIVES + 1);   // the 5th life
-    CHECK(r.livesCompleted == CHOICE_AFTER_LIVES);              // exactly four died first
+    CHECK(r.firstChoiceIncarnation == CHOICE_AFTER_LIVES + 1);   // the 4th life
+    CHECK(r.livesCompleted == CHOICE_AFTER_LIVES);              // exactly three died first
     CHECK(r.reachedCredits);
 
     // The darker turn: the ball panics as you leave, then immediately puts its
@@ -854,6 +855,90 @@ static void test_tutorial_retires() {
     CHECK(g.tutorialDone());
 }
 
+// =============================================================================
+//  Audio: the effects are textures, not DC
+//
+//  The effects used to be built from a xorshift re-seeded from the sample time
+//  and advanced exactly once per sample. That is not a noise source: it made the
+//  "scrape" a ramp from zero, the "rattle" the same value on every sample and
+//  the "roll" a step that ended on a discontinuity -- a set of clicks, pops and
+//  buzzes, which is what "the sound effects are static" sounds like. The
+//  wave helpers had the same kind of bug: handed `f * t`, they compared it
+//  against 0.5, so they returned a constant as well and the summit fanfare was a
+//  DC pulse.
+//
+//  Every one of those failures is measurable on the rendered PCM, so that is
+//  where it is measured: this suite runs with no audio device, and these are
+//  exactly the properties a listener would describe as "static".
+// =============================================================================
+static void test_audio_voices() {
+    section("audio: effect voices");
+    namespace v = cashyphus::audio::voices;
+
+    struct Expect {
+        v::Voice    voice;
+        const char* name;
+        // True when the whole character of the voice is a noise texture, which
+        // also forces its motion to be textural rather than a ramp. "roll" is a
+        // low rumble with gravel in it, not a noise texture, so it is exempt --
+        // its DC, step and tail checks still catch the old discontinuity.
+        bool        textured;
+        float       rmsMin;
+    };
+    const Expect table[] = {
+        { v::Voice::Push,     "push",     false, 0.050f },
+        { v::Voice::Scrape,   "scrape",   true,  0.010f },
+        { v::Voice::Rattle,   "rattle",   true,  0.020f },
+        { v::Voice::Breath,   "breath",   true,  0.006f },
+        { v::Voice::Jingle,   "jingle",   false, 0.080f },
+        { v::Voice::Bell,     "bell",     false, 0.040f },
+        { v::Voice::Collapse, "collapse", false, 0.060f },
+        { v::Voice::Roll,     "roll",     false, 0.040f },
+        { v::Voice::Birds,    "birds",    false, 0.040f },
+    };
+
+    for (const Expect& e : table) {
+        const int n = static_cast<int>(v::seconds(e.voice) * v::RATE);
+        CHECK(n > 0);
+
+        float peak = 0.0f, sum = 0.0f, sumSq = 0.0f, sumDelta = 0.0f;
+        float first = 0.0f, last = 0.0f, prev = 0.0f;
+        bool  finite = true;
+        for (int i = 0; i < n; ++i) {
+            const float s = v::sample(e.voice, i);
+            if (!std::isfinite(s)) finite = false;
+            if (i == 0) first = s;
+            if (i > 0) sumDelta += std::fabs(s - prev);
+            prev  = s;
+            last  = s;
+            peak  = std::max(peak, std::fabs(s));
+            sum  += s;
+            sumSq += s * s;
+        }
+        const float rms  = std::sqrt(sumSq / n);
+        const float dc   = sum / n;
+        const float step = sumDelta / (n - 1);
+
+        std::printf("  %-8s peak %.3f  rms %.3f  dc %+.4f  step %.5f  step/rms %.3f\n",
+                    e.name, peak, rms, dc, step, step / rms);
+
+        CHECK(finite);
+        CHECK(peak <= 0.80f);              // headroom: the mixer has no limiter
+        CHECK(peak >= 0.02f);              // ...but it is not silence either
+        CHECK(rms >= e.rmsMin);
+        CHECK(std::fabs(dc) <= 0.05f);     // no DC offset to step the cone with
+        CHECK(std::fabs(first) <= 0.03f);  // fades in from silence...
+        CHECK(std::fabs(last) <= 0.03f);   // ...and back out, so it never clicks
+        CHECK(step > 0.0005f);             // it moves: not a constant in an envelope
+        if (e.textured) CHECK(step / rms > 0.08f);   // and the motion is texture, not a ramp
+    }
+
+    // The one thing the whole fix turns on: the helpers wrap a large phase.
+    CHECK(std::fabs(v::square(3.25f) - 1.0f) < 1e-6f);
+    CHECK(std::fabs(v::square(3.75f) + 1.0f) < 1e-6f);
+    CHECK(std::fabs(v::tri(3.5f) + 1.0f) < 1e-6f);
+}
+
 int main() {
     std::printf("CASHYPHUS core tests\n====================\n");
     test_stages_and_aging();
@@ -877,6 +962,7 @@ int main() {
     test_game_keep_pushing();
     test_tutorial_retires();
     test_arrangement_decays();
+    test_audio_voices();
 
     std::printf("\n%d/%d checks passed\n", g_checks - g_fail, g_checks);
     return g_fail == 0 ? 0 : 1;
