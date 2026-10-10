@@ -21,17 +21,23 @@ Built with **C++17 + raylib**. Sprites are generated in code; the soundtrack use
 |---|---|
 | **Left-click**, **SPACE** or **Up** | Push: shove the ball uphill, spending stamina |
 | **Hold right-click**, **SHIFT** or **Down** | Brace: hold the ball still and recover stamina, spending grip |
-| **Tap** / **left-click** / **SPACE** on the choice screen | Keep pushing (the cycle continues) |
-| **Hold** / **right-click** / **SHIFT** on the choice screen | Walk away (the escape ending) |
+| **Click** *KEEP PUSHING* / **SPACE** on the choice screen | Keep pushing (the cycle continues) |
+| **Click** *WALK AWAY* / **SHIFT** on the choice screen | Walk away (the escape ending) |
 | **M** | Mute or unmute audio |
 | **[** / **]** | Lower or raise master volume |
 | **F** (web build) | Fullscreen |
 
 On a phone the sound button mutes audio. Gameplay uses the touch bridge in
 `web/shell.html`: **tap = PUSH, press-and-hold = BRACE**. There is no swipe or
-on-screen pad. The
-same two verbs answer the ending, which is the one place a phone cannot copy a
-keyboard: **tap keeps pushing, hold walks away.**
+on-screen pad.
+
+The last decision -- keep pushing, or walk away -- is a message box with two
+buttons, and each button says on itself how to reach it without a mouse: *CLICK /
+SPACE* and *HOLD / SHIFT*. A phone cannot click one, because the page turns a tap
+into SPACE and a press-and-hold into SHIFT and never reports the pointer at all,
+so the gesture is what answers it: **tap keeps pushing, hold walks away**. A click
+that misses both buttons answers nothing, so a stray click cannot decide the
+ending for you.
 
 The two verbs and *when* to use them are the entire game. Topping up stamina
 requires standing still, which the ball loudly objects to.

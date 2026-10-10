@@ -43,6 +43,7 @@ add_library(cashyphus_core STATIC
     src/core/sim.cpp
     src/core/game_state.cpp
     src/core/dialogue.cpp
+    src/core/choice_box.cpp
     src/core/palette.cpp
     src/core/music.cpp
     src/audio/climb.cpp

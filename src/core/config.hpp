@@ -92,6 +92,31 @@ inline FrameFit frameFor(int screenW, int screenH) {
 // display is taller than 1:2, which is every phone.
 inline int frameTop() { return VIRTUAL_H - DESIGN_H; }
 
+// Where the frame lands inside a display, in screen pixels: the whole-number
+// scale blitted into the middle of it. main.cpp presents the frame at exactly
+// this rectangle and the input side undoes exactly this rectangle, so the two
+// come from one place rather than from two copies of the same arithmetic.
+struct FrameView { int x = 0, y = 0, w = 0, h = 0; };
+
+inline FrameView frameViewFor(int screenW, int screenH, const FrameFit& f) {
+    const int w = f.width * f.scale;
+    const int h = f.height * f.scale;
+    return FrameView{ (screenW - w) / 2, (screenH - h) / 2, w, h };
+}
+
+// A screen pixel, back to the frame pixel it is over. Floor division, so a click
+// in the margin beside the frame comes out negative and misses everything:
+// truncation would fold it onto column zero, and on a phone column zero is
+// inside a button.
+struct FramePoint { int x = 0, y = 0; };
+
+inline int floorDiv(int a, int b) { return a >= 0 ? a / b : -(((-a) + b - 1) / b); }
+
+inline FramePoint framePointFor(const FrameView& v, int scale, int mx, int my) {
+    if (scale < 1) scale = 1;
+    return FramePoint{ floorDiv(mx - v.x, scale), floorDiv(my - v.y, scale) };
+}
+
 // --- Fixed simulation step ----------------------------------------------------
 constexpr float FIXED_DT  = 1.0f / 60.0f;
 constexpr float MAX_FRAME = 0.25f;   // clamp huge hiccups

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "core/choice_box.hpp"
 #include "core/config.hpp"
 #include "render/font.hpp"
 #include "render/pixelart.hpp"
@@ -94,26 +95,35 @@ void drawTitle(const Palette& pal) {
     }
 }
 
-void drawChoice(const Palette& pal) {
-    const int w = 168, h = 78;
-    const int x = (VIRTUAL_W - w) / 2;
-    // Never above the status bars, however short the frame is.
-    const int y = std::max(26, 46 + frameTop() / 2);
-    panel(x, y, w, h, pal);
+void drawChoice(const Game& g, const Palette& pal) {
+    const core::ChoiceBox b = core::choiceBoxFor(VIRTUAL_W, VIRTUAL_H);
+    panel(b.box.x, b.box.y, b.box.w, b.box.h, pal);
 
-    const Color txt = toColor(pal.uiText);
-    txt::drawCenter("Well, shall we?", y + 6, txt::SIZE_SMALL, toColor(pal.ballBand));
-    DrawRectangle(x + 8, y + 20, w - 16, 1, toColor(pal.uiDim));
+    const Color ink = toColor(pal.uiText);
+    const Color dim = toColor(pal.uiDim);
+    const Color label[core::CHOICE_COUNT] = { toColor(pal.uiWarn), toColor(pal.uiGood) };
 
-    // The two endings have to be legible on the device in front of you: a tap
-    // and a hold on a phone, a click and a right-click on a desktop. The keys
-    // still work (web/shell.html spells them out, and the README lists them),
-    // but a phone has no Space key to read.
-    txt::drawCenter("KEEP PUSHING", y + 26, txt::SIZE_SMALL, toColor(pal.uiWarn));
-    txt::drawCenter("[TAP / CLICK]", y + 38, txt::SIZE_SMALL, txt);
+    if (g.currentLine()) {
+        txt::drawCenter(g.currentLine(), b.lineY, txt::SIZE_SMALL, toColor(pal.ballBand));
+    }
+    DrawRectangle(b.button[0].x, b.ruleY, b.button[0].w, 1, dim);
 
-    txt::drawCenter("WALK AWAY", y + 54, txt::SIZE_SMALL, toColor(pal.uiGood));
-    txt::drawCenter("[HOLD / R-CLICK]", y + 66, txt::SIZE_SMALL, txt);
+    // The pointer runs one frame ahead of the click, so a button lights up before
+    // it is pressed. On a phone there is no pointer and nothing lights up: the
+    // page sends SPACE for a tap and SHIFT for a hold, and never a position.
+    const Pointer p = pointerInFrame();
+    const int hover = core::choiceBoxHit(b, p.x, p.y);
+
+    for (int i = 0; i < core::CHOICE_COUNT; ++i) {
+        const core::Rect& r = b.button[i];
+        const bool on = (i == hover);
+        DrawRectangle(r.x, r.y, r.w, r.h, toColor(pal.bubbleBg, on ? 240 : 150));
+        DrawRectangleLines(r.x, r.y, r.w, r.h, on ? label[i] : toColor(pal.bubbleEdge));
+        // The label says what it does; the legend says how to reach it, because
+        // the two ways in -- a click, or a key -- are not the same on a phone.
+        txt::drawCenter(core::choiceLabel[i],  r.y + 2,  txt::SIZE_SMALL, label[i]);
+        txt::drawCenter(core::choiceLegend[i], r.y + 15, txt::SIZE_SMALL, on ? ink : dim);
+    }
 }
 
 void drawWalkAwayText(const Game& g, const Palette& pal) {
@@ -179,6 +189,23 @@ void drawTutorialRing(const Game& g, const Palette& pal) {
 } // namespace
 
 // =============================================================================
+//  Pointer
+// =============================================================================
+// The choice box is laid out in glyph cells, and so are the words on it: if the
+// face or its cell ever changes, the buttons would be the wrong width and a
+// click on WALK AWAY would land on the edge of KEEP PUSHING.
+static_assert(core::GLYPH_W == txt::CELL_W, "choice box geometry assumes the baked cell width");
+
+Pointer pointerInFrame() {
+    const FrameFit   f = FrameFit{ FRAME_SCALE, VIRTUAL_W, VIRTUAL_H };
+    const FrameView  v = frameViewFor(GetScreenWidth(), GetScreenHeight(), f);
+    const Vector2    m = GetMousePosition();
+    const FramePoint p = framePointFor(v, FRAME_SCALE,
+                                       static_cast<int>(m.x), static_cast<int>(m.y));
+    return Pointer{ p.x, p.y };
+}
+
+// =============================================================================
 //  Roman numerals
 // =============================================================================
 const char* roman(int n) {
@@ -222,7 +249,7 @@ void draw(const Game& g, const Palette& pal) {
         drawTutorialRing(g, pal);
     }
 
-    if (g.phase() == Phase::Choice)   drawChoice(pal);
+    if (g.phase() == Phase::Choice)   drawChoice(g, pal);
     if (g.phase() == Phase::WalkAway) drawWalkAwayText(g, pal);
 }
 

@@ -12,6 +12,7 @@
 #endif
 
 #include "audio/synth.hpp"
+#include "core/choice_box.hpp"
 #include "core/config.hpp"
 #include "core/game_state.hpp"
 #include "core/music.hpp"
@@ -47,6 +48,35 @@ Input readInput() {
                       IsKeyDown(KEY_DOWN) || IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
     in.anyPressed   = in.pushPressed || in.bracePressed;
     return in;
+}
+
+// On the choice screen the two answers are buttons, so a mouse press is answered
+// by where it landed rather than by which button of the mouse it was: a left
+// click on the words WALK AWAY used to keep pushing, which is the one thing a
+// player who has just read them will not expect. Keys override, because a key is
+// deliberate -- and because that is all the touch bridge can send: web/shell.html
+// turns a tap into SPACE and a press-and-hold into SHIFT, and a phone never
+// reports a position at all.
+void resolveChoiceClick(Input& in) {
+    const bool keyPush  = IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_UP);
+    const bool keyBrace = IsKeyPressed(KEY_LEFT_SHIFT) || IsKeyPressed(KEY_RIGHT_SHIFT) ||
+                          IsKeyPressed(KEY_DOWN);
+    if (keyPush) {
+        in.pushPressed = true;  in.bracePressed = false;
+    } else if (keyBrace) {
+        in.bracePressed = true; in.pushPressed  = false;
+    } else if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+        const core::ChoiceBox box = core::choiceBoxFor(VIRTUAL_W, VIRTUAL_H);
+        const hud::Pointer    p   = hud::pointerInFrame();
+        const int             hit = core::choiceBoxHit(box, p.x, p.y);
+        // A click that misses both buttons answers nothing: the screen waits for
+        // a deliberate answer instead of taking the nearest one.
+        in.pushPressed  = (hit == core::CHOICE_PUSH);
+        in.bracePressed = (hit == core::CHOICE_WALK);
+    } else {
+        in.pushPressed = in.bracePressed = false;
+    }
+    in.anyPressed = in.pushPressed || in.bracePressed;
 }
 
 // --- palette for the current frame ------------------------------------------
@@ -209,17 +239,18 @@ void saveTarget(const RenderTexture2D& target, const std::string& file) {
 
 // The frame is what fills the display: frameFor() chose a whole-number scale and
 // grew the frame itself, so all that is left here is blitting it up at that scale,
-// with at most a pixel of slack on each edge.
+// with at most a pixel of slack on each edge. The rectangle comes from
+// frameViewFor() rather than from arithmetic repeated here, because the input side
+// has to undo exactly this one to know what the mouse is over.
 void present(const RenderTexture2D& target) {
-    const int sw = GetScreenWidth();
-    const int sh = GetScreenHeight();
+    const FrameFit  f = FrameFit{ FRAME_SCALE, VIRTUAL_W, VIRTUAL_H };
+    const FrameView v = frameViewFor(GetScreenWidth(), GetScreenHeight(), f);
 
-    const float dw = static_cast<float>(VIRTUAL_W * FRAME_SCALE);
-    const float dh = static_cast<float>(VIRTUAL_H * FRAME_SCALE);
     const Rectangle src{ 0.0f, 0.0f,
                          static_cast<float>(target.texture.width),
                          -static_cast<float>(target.texture.height) };
-    const Rectangle dst{ std::floor((sw - dw) * 0.5f), std::floor((sh - dh) * 0.5f), dw, dh };
+    const Rectangle dst{ static_cast<float>(v.x), static_cast<float>(v.y),
+                         static_cast<float>(v.w), static_cast<float>(v.h) };
     DrawTexturePro(target.texture, src, dst, { 0.0f, 0.0f }, 0.0f, WHITE);
 }
 
@@ -296,7 +327,8 @@ void frameStep() {
         if (IsKeyPressed(KEY_LEFT_BRACKET)) a.cues.master = std::max(0.0f, a.cues.master - 0.1f);
         if (IsKeyPressed(KEY_RIGHT_BRACKET)) a.cues.master = std::min(1.0f, a.cues.master + 0.1f);
     }
-    const Input realIn = a.opts.capture ? Input{} : readInput();
+    Input realIn = a.opts.capture ? Input{} : readInput();
+    if (!a.opts.capture && a.game.phase() == Phase::Choice) resolveChoiceClick(realIn);
     bool firstStep = true;
     while (a.accum >= FIXED_DT) {
         Input step;

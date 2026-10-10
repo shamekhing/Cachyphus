@@ -4,10 +4,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 #include "audio/climb.hpp"
 #include "audio/music_data.hpp"
 #include "audio/voices.hpp"
+#include "core/choice_box.hpp"
 #include "core/dialogue.hpp"
 #include "core/game_state.hpp"
 #include "core/music.hpp"
@@ -1110,6 +1112,131 @@ static void test_dialogue_fits_the_bubble() {
     for (int i = 0; i < lines::walkLeaveCount; ++i) checkLine(lines::walkLeave[i]);
 }
 
+// =============================================================================
+//  The choice screen: a message box with two buttons
+// =============================================================================
+// The last decision in the game used to be four lines of text, and a left click
+// anywhere -- including on the words WALK AWAY -- meant "keep pushing". The
+// answers are buttons now, and a button is geometry that three places have to
+// agree on: hud.cpp draws it, main.cpp hit-tests it, and the player has to be able
+// to land on it with a mouse. So it gets measured, at every frame shape the game
+// can produce, rather than eyeballed on one screen.
+static int textLen(const char* s) { return static_cast<int>(std::strlen(s)); }
+
+static void test_choice_box_fits_every_frame() {
+    section("choice: the message box fits the frame");
+    const struct { int w, h; } frames[] = {
+        {180, 360},   // the design frame
+        {180, 320},   // a 360x640 phone
+        {195, 358},   // a phone with the URL bar up
+        {195, 422},   // a 390x844 phone, the commonest shape of all
+        {210, 400},   // the itch wrapper's box in a 420x800 iframe
+        {256, 341},   // a tablet
+        {266, 301},   // 800x903: the short frame with the URL bar up
+        {320, 480},   // 1x on a small display
+        {200, 250},   // shorter than frameFor() will produce; still has to be sane
+    };
+
+    for (const auto& f : frames) {
+        const core::ChoiceBox b = core::choiceBoxFor(f.w, f.h);
+
+        CHECK(b.box.x >= 0);
+        CHECK(b.box.y >= 26);                        // never over the meters
+        CHECK(b.box.x + b.box.w <= f.w);
+        CHECK(b.box.y + b.box.h <= f.h);
+        CHECK(b.lineY >= b.box.y);                   // the question has a row...
+        CHECK(b.lineY + 12 <= b.ruleY);              // ...above the rule...
+        CHECK(b.ruleY < b.button[0].y);              // ...above the buttons
+
+        for (int i = 0; i < core::CHOICE_COUNT; ++i) {
+            const core::Rect& r = b.button[i];
+            CHECK(r.w > 0 && r.h > 0);
+            CHECK(r.x >= b.box.x && r.x + r.w <= b.box.x + b.box.w);
+            CHECK(r.y >= b.box.y && r.y + r.h <= b.box.y + b.box.h);
+            // Wide enough for the longer of the two words on it, at the baked
+            // face's 8px a character, with room either side. A label wider than
+            // its button is a label that runs out of the box on a phone.
+            const int need = std::max(textLen(core::choiceLabel[i]), textLen(core::choiceLegend[i])) * core::GLYPH_W;
+            CHECK(r.w >= need + 8);
+        }
+        // Stacked, not overlapping: one click cannot mean both answers.
+        CHECK(b.button[1].y >= b.button[0].y + b.button[0].h);
+        CHECK(b.button[0].h >= 24);                  // a target, not a line of text
+    }
+}
+
+static void test_choice_buttons_answer_a_click() {
+    section("choice: the buttons answer a click");
+    const core::ChoiceBox b = core::choiceBoxFor(195, 422);
+
+    for (int i = 0; i < core::CHOICE_COUNT; ++i) {
+        const core::Rect& r = b.button[i];
+        CHECK(core::choiceBoxHit(b, r.x, r.y) == i);                       // top-left, inside
+        CHECK(core::choiceBoxHit(b, r.x + r.w - 1, r.y + r.h - 1) == i);   // bottom-right, inside
+        CHECK(core::choiceBoxHit(b, r.x + r.w / 2, r.y + r.h / 2) == i);   // the middle
+        // Half-open: the first pixel past an edge belongs to nobody.
+        CHECK(core::choiceBoxHit(b, r.x - 1, r.y + 4) == core::CHOICE_NONE);
+        CHECK(core::choiceBoxHit(b, r.x + r.w, r.y + 4) == core::CHOICE_NONE);
+        CHECK(core::choiceBoxHit(b, r.x + 4, r.y - 1) == core::CHOICE_NONE);
+        CHECK(core::choiceBoxHit(b, r.x + 4, r.y + r.h) == core::CHOICE_NONE);
+    }
+
+    // The gap between the buttons, the padding inside the box, and the world
+    // outside it all answer nothing: a click that misses has to leave the screen
+    // waiting rather than pick the nearest answer.
+    CHECK(core::choiceBoxHit(b, b.button[0].x + 2, b.button[0].y + b.button[0].h) == core::CHOICE_NONE);
+    CHECK(core::choiceBoxHit(b, b.box.x + 1, b.box.y + 1) == core::CHOICE_NONE);
+    CHECK(core::choiceBoxHit(b, b.box.x + b.box.w - 1, b.ruleY) == core::CHOICE_NONE);
+    CHECK(core::choiceBoxHit(b, 0, 0) == core::CHOICE_NONE);
+    CHECK(core::choiceBoxHit(b, 195, 422) == core::CHOICE_NONE);
+    CHECK(core::choiceBoxHit(b, -40, 200) == core::CHOICE_NONE);
+}
+
+static void test_choice_click_maps_back_onto_the_button() {
+    section("choice: a click maps back onto the button it was aimed at");
+    // The buttons are hit-tested in frame pixels, but a click arrives in screen
+    // pixels, after the frame has been scaled up by a whole number and centred in
+    // a display that need not have the frame's shape. On a desktop that is
+    // hundreds of pixels of margin on each side, so this is precisely where the
+    // two spaces can drift apart -- and where clicking the wrong ending would
+    // have to come from.
+    const struct { int w, h; } displays[] = {
+        {1440, 900}, {2560, 1440}, {1920, 1080}, {390, 844}, {390, 717}, {800, 903}, {360, 640},
+    };
+
+    for (const auto& d : displays) {
+        const FrameFit  f = frameFor(d.w, d.h);
+        const FrameView v = frameViewFor(d.w, d.h, f);
+        const core::ChoiceBox b = core::choiceBoxFor(f.width, f.height);
+        CHECK(v.x >= 0 && v.y >= 0);
+        CHECK(v.x + v.w <= d.w && v.y + v.h <= d.h);
+
+        for (int i = 0; i < core::CHOICE_COUNT; ++i) {
+            const core::Rect& r = b.button[i];
+            // Both edges and the middle of the button, each one taken out to the
+            // screen and read back the way the game reads a click.
+            const int rows[] = { r.y + 1, r.y + r.h / 2, r.y + r.h - 1 };
+            const int cols[] = { r.x, r.x + r.w / 2, r.x + r.w - 1 };
+            for (int py : rows) {
+                for (int px : cols) {
+                    const FramePoint p = framePointFor(v, f.scale,
+                                                       v.x + px * f.scale, v.y + py * f.scale);
+                    CHECK(core::choiceBoxHit(b, p.x, p.y) == i);
+                }
+            }
+        }
+
+        // The margin beside the frame is not the frame: a click out there comes
+        // back negative and misses everything rather than folding onto column
+        // zero, which on a phone is inside a button.
+        const FramePoint margin = framePointFor(v, f.scale, v.x - 1, v.y + v.h / 2);
+        CHECK(margin.x < 0);
+        CHECK(core::choiceBoxHit(b, margin.x, margin.y) == core::CHOICE_NONE);
+        const FramePoint below = framePointFor(v, f.scale, v.x + v.w / 2, v.y + v.h + 1);
+        CHECK(core::choiceBoxHit(b, below.x, below.y) == core::CHOICE_NONE);
+    }
+}
+
 int main() {
     std::printf("CASHYPHUS core tests\n====================\n");
     test_stages_and_aging();
@@ -1137,6 +1264,9 @@ int main() {
     test_climb_theme();
     test_frame_fit();
     test_dialogue_fits_the_bubble();
+    test_choice_box_fits_every_frame();
+    test_choice_buttons_answer_a_click();
+    test_choice_click_maps_back_onto_the_button();
 
     std::printf("\n%d/%d checks passed\n", g_checks - g_fail, g_checks);
     return g_fail == 0 ? 0 : 1;
