@@ -1,13 +1,19 @@
 #pragma once
 #include <array>
+#include "audio/climb.hpp"
 #include "audio/voices.hpp"
+#include "core/music.hpp"
 #include "raylib.h"
 
 namespace cashyphus::audio {
 class Synth {
 public:
     enum class Effect { Push1,Push2,Push3,Push4,Strong,BraceStart,BraceLoop,BraceEnd,Roll,Slip,Stamina,Grip,Aging,Summit,Death,Downhill,Reincarnation,Dialogue,Choice,WalkAway,Count };
-    enum class Track { Base,Young,Adult,Old,Final,Endless,Mechanical,Freedom,Count };
+    // Two music beds. Chip is the baked CC0 chiptune -- "Amusement park Stage" by
+    // MintoDog, see assets/CREDITS.md -- worn down a little with every incarnation
+    // spent. Freedom is the recorded natural bed for the ending where the player
+    // walks away. Only one plays at a time.
+    enum class Track { Chip, Freedom, Count };
     void init();
     void shutdown();
     bool ready() const { return ready_; }
@@ -16,6 +22,9 @@ public:
     void loop(Effect e, float target, float dt);
     void select(Track t);
     void setVolumes(float master,float music,float effects,float dialogue,float ambience);
+    // How worn the climb theme is, from core/music.hpp: one Arrangement per
+    // lifetime spent, applied to the theme as it is played rather than baked.
+    void setArrangement(const core::Arrangement& a);
 private:
     // A short effect is a small pool of voices over one decoded sample. A player
     // can land two pushes inside one coin tail, and a single Sound would cut the
@@ -45,11 +54,12 @@ private:
 
     std::array<Clip,static_cast<int>(Effect::Count)> clips_{};
     std::array<Song,static_cast<int>(Track::Count)> songs_{};
-    Track current_=Track::Base;
-    Track wanted_=Track::Base;
+    AudioStream chip_{};        // the baked climb theme, filled by the audio thread
+    Track current_=Track::Chip;
+    Track wanted_=Track::Chip;
     bool ready_=false;
     float master_=1,music_=0.35f,effects_=0.65f,dialogue_=0.45f,ambience_=0.35f;
-    float songGain_=0;
-    float musicActual_=0;
+    float songGain_=0;          // the recorded bed's fade
+    float chipGain_=0;          // the chiptune's fade
 };
 }

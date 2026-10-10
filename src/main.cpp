@@ -130,19 +130,18 @@ void driveAudio(audio::Synth& synth, const Game& g, AudioCues& c, const Input&, 
         if (shown > c.reveal && shown % 3 == 0 && c.line[shown-1] != ' ') synth.play(E::Dialogue, 0.95f + 0.05f*(shown%3), 0.5f);
         c.reveal = shown;
     }
-    T t = T::Young;
-    if (p == Phase::WalkAway && g.walkT() < 0.85f) t = T::Freedom;
-    else if (p == Phase::WalkAway) t = T::Base;
-    else if (p == Phase::Credits || p == Phase::Title || p == Phase::WalkIn || p == Phase::Choice) t = T::Base;
-    else if (g.completedLives() >= 12) t = T::Mechanical;
-    else if (g.completedLives() >= 5) t = T::Endless;
-    else if (g.stage() == Stage::Adult) t = T::Adult;
-    else if (g.stage() == Stage::Old) t = T::Old;
-    else if (g.stage() == Stage::Final) t = T::Final;
+    // The score is one baked CC0 chiptune, worn down a little with every lifetime
+    // the player has spent -- core/music.hpp decides how much, and the arrangement
+    // is applied as the theme is played rather than baked six different ways. So the
+    // tune stays recognisable however far the ball has got, and the ball's own age
+    // is what the ear hears changing. Walking away swaps the whole thing for the
+    // recorded natural bed; the dark twist at the end of that walk brings the theme
+    // back, which is the joke.
+    synth.setArrangement(core::arrangementFor(g.completedLives()));
+    synth.select(p == Phase::WalkAway && g.walkT() < 0.85f ? T::Freedom : T::Chip);
     if (p == Phase::WalkAway && g.walkT() >= 0.85f && !c.twist) {
         synth.play(E::Reincarnation); synth.play(E::Push1, 1.0f, 0.5f); c.twist = true;
     }
-    synth.select(t);
     synth.update(dt);
 }
 

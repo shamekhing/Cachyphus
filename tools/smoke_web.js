@@ -103,8 +103,8 @@ function fail(msg) { console.error('smoke FAIL: ' + msg); process.exit(1); }
   // The preloaded WAV/OGG package and user-gesture audio context must be live.
   const audio = await page.evaluate(() => ({
     packageLoaded: typeof FS !== 'undefined' &&
-      FS.analyzePath('/audio/music/money_loop_young.ogg').exists &&
       FS.analyzePath('/audio/sfx/push_01.wav').exists &&
+      FS.analyzePath('/audio/sfx/walk_away.wav').exists &&
       FS.analyzePath('/audio/ambience/freedom.ogg').exists,
     devices: (window.miniaudio && window.miniaudio.devices || []).length,
     running: (window.miniaudio && window.miniaudio.devices || []).some(

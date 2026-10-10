@@ -190,7 +190,7 @@ src/
     game_state.hpp/.cpp  the CLIMB -> death -> reincarnation loop
     dialogue.hpp/.cpp    the ball's lines, banded by life stage
     palette.hpp/.cpp     warm-youth -> cold-summit colour model
-    music.hpp/.cpp       legacy arrangement curve retained for headless tests
+    music.hpp/.cpp       the arrangement curve: how worn the climb theme is
   render/     raylib drawing
     pixelart.hpp/.cpp    char-map + palette -> texture (and CPU images)
     sprites.hpp/.cpp     the character sprite sheets + hunch-on-aging
@@ -199,10 +199,13 @@ src/
     font.hpp/.cpp        the baked 8px pixel face, and text helpers
     font_data.hpp        generated glyph table (tools/gen_font.py)
   audio/
-    synth.hpp/.cpp       loads WAV effects and OGG music, pools voices, fades tracks
+    synth.hpp/.cpp       loads the effect WAVs, pools voices, mixes the two beds
+    climb.hpp/.cpp       plays the baked climb theme, worn down by the curve
+    music_data.hpp/.cpp  the baked theme itself (from tools/gen_music.py)
     voices.hpp           the nine procedural voices, for when a recording is absent
   main.cpp      window, 180x360 portrait render target, input, fixed-timestep loop
-assets/audio/   original CC0 recordings, edited effects, loops, and SOURCES.md
+assets/audio/   the CC0 recordings the effects and the ending's bed are cut from,
+                the edited effects, the walk-away ambience, and SOURCES.md
 tests/          headless test binary
 tools/          offline asset bakers and preview dumps
 web/            Emscripten HTML shell
@@ -280,7 +283,7 @@ design frame and translated down by the extra height, so a taller frame is more
 sky above an unchanged scene -- nothing is stretched, nothing is cropped, and a
 landscape monitor keeps the design width and gives up only the sides.
 
-**Audio** loads edited CC0 coin, money handling, paper, and nature recordings from `assets/audio`. The 100 BPM eight-bar score has age and incarnation variations; raylib streams OGG loops and caches short WAV effects in a three-voice pool each, so a player who mashes the push key overlaps coin tails rather than cutting them off. The main loop routes effects from accepted simulation events, crossfades tracks, and applies master, music, effects, dialogue, and ambience gains. M toggles mute and bracket keys adjust master volume. A missing or undecodable recording falls back to one of the nine procedural voices in `src/audio/voices.hpp` instead of to silence, and if the machine has no audio device at all the game still plays.
+**Audio** is two things. The music is one real CC0 chiptune -- MintoDog's *Amusement park Stage*, credited in `assets/CREDITS.md` -- baked into the binary as a sample table and worn down as lifetimes pile up: a low-pass first, then sample-and-hold, then quantisation, then a little detune, all from the curve in `src/core/music.hpp`, so the tune stays recognisable however far the ball has got. The effects are the other thing: edited CC0 coin, banknote, paper and casino recordings from `assets/audio`, cached in a three-voice pool each so a player who mashes the push key overlaps coin tails rather than cutting them off, plus the natural bed that takes over when the player walks away. The main loop routes effects from accepted simulation events, crossfades the beds, and applies master, music, effects, dialogue, and ambience gains. M toggles mute and bracket keys adjust master volume. A missing or undecodable recording falls back to one of the nine procedural voices in `src/audio/voices.hpp` instead of to silence, and if the machine has no audio device at all the game still plays.
 
 ---
 
@@ -309,13 +312,14 @@ toolchain installed:
 ./build/debug/cashyphus_decode track.ogg track.wav
 ```
 
-**Asset bakers** regenerate the font table and the committed audio assets, and the
-last one checks them. None is needed for an ordinary build:
+**Asset bakers** regenerate the font table, the baked music and the committed
+effect recordings; the last one checks them. None is needed for an ordinary build:
 
 ```bash
-python3 tools/gen_font.py                # assets/fonts/*.bdf  -> font_data.hpp
-python3 tools/build_audio.py            # retained recordings -> WAV and OGG files
-python3 tools/verify_audio.py           # measure every committed effect and loop
+python3 tools/gen_font.py                  # assets/fonts/*.bdf  -> font_data.hpp
+python3 tools/gen_music.py  <decoded.wav>  # the chiptune       -> music_data.cpp
+python3 tools/build_audio.py               # retained recordings -> effect WAVs
+python3 tools/verify_audio.py              # measure the effects, the bed and the table
 ```
 
 Sources and licenses are in **[assets/audio/SOURCES.md](assets/audio/SOURCES.md)** and **[assets/CREDITS.md](assets/CREDITS.md)**.

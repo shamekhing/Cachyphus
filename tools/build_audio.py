@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""Render the CASHYPHUS currency sample score. Run after source downloads.
+"""Render the CASHYPHUS effect recordings and the ending's ambience.
 Uses NumPy and the system libsndfile for OGG Vorbis export; neither is needed at runtime.
+
+Ogg output is not byte-reproducible: libsndfile gives each stream a random serial
+number, so re-running rewrites the .ogg container even when the audio inside it is
+identical. Compare the decoded samples, not the files -- tools/verify_audio.py does.
 """
 from pathlib import Path
 import ctypes as C
@@ -12,8 +16,6 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 A = ROOT / 'assets/audio'
 RATE = 44100
-BEAT = .6
-N = int(32 * BEAT * RATE)
 
 
 def read(path):
@@ -131,60 +133,11 @@ wav('reincarnation.wav',norm(np.concatenate((more[0][:2205],purchase,coins[9])),
 wav('dialogue_tick.wav',norm(coins[0][:int(.045*RATE)],.22));wav('choice_select.wav',norm(coins[2][:int(.12*RATE)],.42))
 wav('walk_away.wav',norm(paper2[:int(.8*RATE)],.3))
 
-# A recognisable eight-bar, 100 BPM coin score. Notes are pitched coin attacks.
-melody=[0,4,7,4, 2,5,9,5, 4,7,11,7, 2,5,9,5, 0,4,7,12, 7,4,2,4, 0,2,5,9, 7,4,2,0]
-bass=[-24,-24,-19,-19,-21,-21,-19,-19]
-variants=['base','young','adult','old','final','endless','mechanical']
-for kind in variants:
-    left=np.zeros(N,dtype=np.float32);right=np.zeros(N,dtype=np.float32)
-    for beat in range(32):
-        t=beat*BEAT
-        # Low coin impact, two-click snare, and sixteenth coin-rattle shaker.
-        kick=pitch(coins[4],-22)
-        put(left,kick,t,.19);put(right,kick,t,.19)
-        if beat%4 in (1,3):
-            sn=pitch(real[0],-3 if kind in ('old','final','mechanical') else 0)
-            put(left,sn,t,.12);put(right,sn,t,.15)
-        if kind in ('young','base','adult','old','endless','mechanical'):
-            for half in (0,.5):
-                put(left,coins[1][:int(.07*RATE)],t+half*BEAT,.045)
-                put(right,coins[2][:int(.07*RATE)],t+half*BEAT,.035)
-        if kind in ('young','base','adult'):
-            for q in range(4):
-                put(right,real[2][:int(.08*RATE)],t+q*BEAT/4,.014)
-        # Shared tune; age removes notes while leaving the outline audible.
-        melodic=(kind in ('young','base','adult') or (kind=='old' and beat%2==0)
-                 or (kind in ('final','endless') and beat%4==0))
-        if melodic:
-            note=pitch(coins[7],melody[beat]-5)
-            put(left,note,t,.095 if kind in ('young','base') else .07)
-            put(right,note,t+.004,.08 if kind in ('young','base') else .05)
-        if kind!='mechanical':
-            note=pitch(coins[4],bass[beat//4])
-            put(left,note,t,.11 if kind=='young' else .17)
-            put(right,note,t,.11 if kind=='young' else .17)
-        if kind=='mechanical' and beat%2==0:
-            put(left,more[1],t,.1);put(right,casino,t,.07)
-    # Filtered paper handling sits beneath the score, with no free running randomness.
-    if kind in ('base','young','adult','old'):
-        for bar in range(8):
-            p=paper2[:int(.45*RATE)]
-            put(left,p,bar*4*BEAT+.5*BEAT,.018)
-            put(right,p,bar*4*BEAT+.5*BEAT,.012)
-            put(right,jingle[:int(.25*RATE)],bar*4*BEAT+2*BEAT,.006)
-    mix=np.column_stack((left,right))
-    # Wrap the last 80 ms onto the start so delayed coin tails cross the seam.
-    xf=int(.08*RATE)
-    mix[:xf]+=mix[-xf:]*np.linspace(1,0,xf)[:,None]
-    mix[-xf:]*=np.linspace(1,0,xf)[:,None]
-    if kind in ('old','final','endless','mechanical'):
-        # Gentle low pass; the original coin attacks remain identifiable.
-        alpha={'old':.5,'final':.32,'endless':.4,'mechanical':.55}[kind]
-        for c in range(2):
-            for i in range(1,N):mix[i,c]=alpha*mix[i,c]+(1-alpha)*mix[i-1,c]
-    mix[:int(.04*RATE)] *= np.linspace(0,1,int(.04*RATE))[:,None]
-    mix=np.tanh(mix*1.4)*.68
-    ogg(A/'music'/f'money_loop_{kind}.ogg',mix)
+# The music is NOT rendered here. It is MintoDog's CC0 chiptune, baked into the
+# binary by tools/gen_music.py and worn down at playback time -- see CREDITS.md.
+#
+# What this script makes is the effects and the ending's ambience.
+
 
 # Four CC0 field recordings: birds, wind, rustling leaves and footsteps.
 # No money-derived material appears in the freedom ambience.

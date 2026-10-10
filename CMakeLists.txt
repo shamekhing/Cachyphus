@@ -33,6 +33,11 @@ set(SUPPORT_MODULE_RAUDIO     ON  CACHE BOOL "" FORCE)
 
 # ---------------------------------------------------------------------------
 #  Core: pure logic, no raylib. This is what the tests exercise.
+#
+#  The climb theme lives here rather than with the game's audio, because it is
+#  pure too: a baked table of samples and a player that wears it down. Nothing in
+#  it touches raylib, and the music is the one thing a player spends the whole
+#  session listening to, so it is measured in the test suite like the rest.
 # ---------------------------------------------------------------------------
 add_library(cashyphus_core STATIC
     src/core/sim.cpp
@@ -40,6 +45,8 @@ add_library(cashyphus_core STATIC
     src/core/dialogue.cpp
     src/core/palette.cpp
     src/core/music.cpp
+    src/audio/climb.cpp
+    src/audio/music_data.cpp
 )
 target_include_directories(cashyphus_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(cashyphus_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -98,11 +105,11 @@ if(CASHYPHUS_BUILD_GAME)
         # that call is why the build needs -sASYNCIFY.
         set_target_properties(cashyphus PROPERTIES
             SUFFIX ".html"
-            LINK_FLAGS "--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/sfx@/audio/sfx --preload-file ${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/music@/audio/music --preload-file ${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/ambience@/audio/ambience -sUSE_GLFW=3 -sASSERTIONS=1 -sALLOW_MEMORY_GROWTH=1 -sASYNCIFY -sMINIFY_HTML=0 --shell-file ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html")
+            LINK_FLAGS "--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/sfx@/audio/sfx --preload-file ${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/ambience@/audio/ambience -sUSE_GLFW=3 -sASSERTIONS=1 -sALLOW_MEMORY_GROWTH=1 -sASYNCIFY -sMINIFY_HTML=0 --shell-file ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html")
         # Emscripten's preload package must be rebuilt when rendered audio changes.
+        # The climb theme is not in here: it is baked into the binary.
         file(GLOB_RECURSE CASHYPHUS_AUDIO_FILES CONFIGURE_DEPENDS
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/sfx/*"
-            "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/music/*"
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/ambience/*")
         set_property(TARGET cashyphus APPEND PROPERTY LINK_DEPENDS ${CASHYPHUS_AUDIO_FILES})
         # Relink when the HTML shell changes.

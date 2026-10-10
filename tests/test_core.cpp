@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstdio>
 
+#include "audio/climb.hpp"
+#include "audio/music_data.hpp"
 #include "audio/voices.hpp"
 #include "core/dialogue.hpp"
 #include "core/game_state.hpp"
@@ -995,6 +997,71 @@ static void test_frame_fit() {
     CHECK(none.scale >= 1 && none.width >= 1 && none.height >= 1);
 }
 
+// =============================================================================
+//  Audio: the climb theme
+// =============================================================================
+// The score is one baked CC0 chiptune -- a table in music_data.cpp, played by
+// climb.cpp and worn down by an Arrangement as the ball spends lifetimes. Both
+// halves are measured here, with no audio device anywhere: the table has to be a
+// real recording rather than a placeholder, and the wear has to be visible in the
+// numbers (duller and quieter) without ever clipping or going silent.
+static void test_climb_theme() {
+    section("audio: the climb theme wears down");
+    namespace md = cashyphus::audio::musicdata;
+
+    CHECK(md::SAMPLE_RATE == 22050);
+    CHECK(md::SAMPLE_COUNT >= md::SAMPLE_RATE * 8);   // at least 8s of loop
+
+    // The table itself: not silence, and not one value held for a placeholder.
+    int peak = 0, runs = 0, prev = 0;
+    for (int i = 0; i < 4096; ++i) {
+        const int v = md::PCM[i];
+        if (std::abs(v) > peak) peak = std::abs(v);
+        if (v != prev) { ++runs; prev = v; }
+    }
+    CHECK(peak > 1000);      // ~0.03 of full scale at the very least
+    CHECK(runs > 256);       // a waveform, not a constant
+
+    // Play half a second under an arrangement and measure it.
+    struct Stats { float rms = 0.0f, hf = 0.0f, peak = 0.0f; };
+    const auto measure = [](const core::Arrangement& a) {
+        audio::ClimbTheme theme;
+        theme.reset();
+        theme.setArrangement(a);
+        const int n = 44100 / 2;
+        Stats s;
+        double sq = 0.0, hf = 0.0;
+        float prev = theme.next();
+        for (int i = 1; i < n; ++i) {
+            const float v = theme.next();
+            sq += static_cast<double>(v) * v;
+            hf += std::abs(v - prev);          // mean step: high-frequency energy
+            if (std::abs(v) > s.peak) s.peak = std::abs(v);
+            prev = v;
+        }
+        s.rms = static_cast<float>(std::sqrt(sq / n));
+        s.hf  = static_cast<float>(hf / n);
+        return s;
+    };
+
+    const Stats fresh = measure(core::arrangementFor(0));
+    const Stats spent = measure(core::arrangementFor(core::ARRANGEMENT_SPENT_LIVES));
+    const Stats beyond = measure(core::arrangementFor(core::ARRANGEMENT_SPENT_LIVES + 40));
+
+    CHECK(fresh.rms > 0.01f);                  // the theme is audible to start with
+    CHECK(spent.rms < fresh.rms);              // it loses level as lifetimes pile up
+    CHECK(spent.hf < fresh.hf);                // and the low-pass takes the top off
+    CHECK(beyond.hf < fresh.hf);
+    CHECK(beyond.rms > 0.005f);                // but it is never silenced
+    CHECK(fresh.peak <= 1.0f && spent.peak <= 1.0f && beyond.peak <= 1.0f);
+
+    // The curve is the one thing the loop cannot get back: it only ever wears down.
+    const core::Arrangement young = core::arrangementFor(0);
+    const core::Arrangement worn  = core::arrangementFor(99);
+    CHECK(worn.tone < young.tone && worn.gain <= young.gain);
+    CHECK(worn.bits <= young.bits && worn.hold >= young.hold);
+}
+
 int main() {
     std::printf("CASHYPHUS core tests\n====================\n");
     test_stages_and_aging();
@@ -1019,6 +1086,7 @@ int main() {
     test_tutorial_retires();
     test_arrangement_decays();
     test_audio_voices();
+    test_climb_theme();
     test_frame_fit();
 
     std::printf("\n%d/%d checks passed\n", g_checks - g_fail, g_checks);

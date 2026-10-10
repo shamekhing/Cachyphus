@@ -5,13 +5,18 @@ The effects and loops are committed files, so no build step would notice if one
 went missing, silent, DC-offset, the wrong length, or stopped looping cleanly.
 This reads the same names the game reads (out of src/audio/synth.cpp), measures
 every file the loader would ask for, and fails loudly rather than quietly
-shipping a placeholder. It also checks the two things the score promises: that
-aging darkens it, and that the ambience bed is actually audible under the music.
+shipping a placeholder. The climb theme is baked into the binary instead of being
+loaded, so it is checked where it lives: the declared length against the table,
+and the table against being a placeholder. It also checks that the ending's
+natural bed is actually audible under the theme.
 
     python3 tools/verify_audio.py
 
 Needs NumPy, and the native build for cashyphus_decode (raylib's decoders are the
 only ones here, and they are the same ones the game uses at runtime).
+How worn the theme gets per incarnation is measured in the C++ suite instead
+(tests/test_core.cpp, "the climb theme wears down"): the arrangement is applied as
+the theme plays, not baked into a different file per stage.
 """
 from pathlib import Path
 import re
@@ -25,7 +30,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 A = ROOT / "assets/audio"
 RATE = 44100
-LOOP = 19.2                     # 32 beats at 100 BPM
+LOOP = 19.2                     # the ambience bed's length, in seconds
 LOOP_TOLERANCE = 0.01
 problems = []
 
@@ -110,7 +115,7 @@ for name in names("src/audio/synth.cpp", "effectNames"):
     note(abs(dc) <= 0.002, f"{name}.wav carries {dc:+.4f} of DC, a step at both edges")
     note(edges(a) <= 0.05, f"{name}.wav starts or ends at {edges(a):.3f}, which is a click")
 
-songs = names("src/audio/synth.cpp", "trackNames")
+songs = names("src/audio/synth.cpp", "bedNames")
 print(f"\n{'loop':<20}{'sec':>7}{'peak':>7}{'rms':>8}{'dc':>9}{'seam':>15}  centroid")
 tone = {}
 with tempfile.TemporaryDirectory() as tmp:
@@ -137,21 +142,40 @@ with tempfile.TemporaryDirectory() as tmp:
              f"{name}.ogg jumps {across:.3f} across the seam, more than its own {inside:.3f} inside it")
         tone[name] = (c, rms)
 
-# The score ages: the late incarnations have to measure darker than the early ones.
-early = [tone[n][0] for n in ("young", "base", "adult") if n in tone]
-late = [tone[n][0] for n in ("old", "final", "endless") if n in tone]
-if early and late:
-    note(np.mean(late) < np.mean(early),
-         f"aging does not darken the score: late {np.mean(late):.0f} Hz vs early {np.mean(early):.0f} Hz")
-    print(f"\naging: early {np.mean(early):.0f} Hz -> late {np.mean(late):.0f} Hz")
+# The score is baked into the binary rather than loaded, so it is checked where it
+# lives: the header's declared length against the table itself, and the table
+# against being a placeholder.
+hpp = (ROOT / "src/audio/music_data.hpp").read_text(encoding="utf-8")
+table = (ROOT / "src/audio/music_data.cpp").read_text(encoding="utf-8")
+declared = int(re.search(r"SAMPLE_COUNT\s*=\s*(\d+)", hpp).group(1))
+theme_rate = int(re.search(r"SAMPLE_RATE\s*=\s*(\d+)", hpp).group(1))
+body = re.search(r"PCM\s*\[[^\]]*\]\s*=\s*\{(.*?)\n\};", table, re.S)
+values = (np.array([int(v) for v in body.group(1).split(",") if v.strip()], dtype=np.int32)
+          if body else np.array([], dtype=np.int32))
+theme_rms = float(np.sqrt((values.astype(np.float64) / 32768.0) ** 2).mean()) if len(values) else 0.0
+theme_peak = float(np.abs(values).max()) / 32768.0 if len(values) else 0.0
 
-# The ending's natural bed has to be audible under the music bus, or walking away
-# plays to nobody.
-if "freedom" in tone and early:
-    music = np.mean([tone[n][1] for n in tone if n != "freedom"])
-    ratio = tone["freedom"][1] / music
-    note(ratio >= 0.25, f"freedom.ogg sits {20*np.log10(max(ratio,1e-6)):.1f} dB under the score")
-    print(f"ambience: {ratio:.2f} of the score's level ({20*np.log10(max(ratio,1e-6)):+.1f} dB)")
+# The level the theme is mixed at, read straight out of the loader so this cannot
+# drift from the game: kChipLevel into the music bus main.cpp sets each frame.
+synth_src = (ROOT / "src/audio/synth.cpp").read_text(encoding="utf-8")
+level = re.search(r"kChipLevel\s*=\s*([0-9.]+)f", synth_src)
+chip_level = float(level.group(1)) if level else 0.27
+theme_mix = theme_rms * chip_level * 0.35
+
+print("\nclimb theme (baked into the binary, not a file)")
+print(f"  {len(values)} samples at {theme_rate} Hz = {len(values) / max(theme_rate, 1):.2f}s, "
+      f"peak {theme_peak:.3f}, rms {theme_rms:.4f} -> {theme_mix:.4f} at the music bus")
+note(len(values) == declared,
+     f"music_data.cpp holds {len(values)} samples but the header declares {declared}")
+note(theme_rms >= 0.005, "the baked climb theme is silent")
+note(len(np.unique(values[:4096])) > 16, "the baked climb theme is a placeholder")
+
+# The ending's natural bed has to be audible under the theme, or walking away plays
+# to nobody. Both beds sit on a 0.35 bus, so compare what reaches the speakers.
+if "freedom" in tone:
+    ratio = tone["freedom"][1] / theme_mix if theme_mix else 0.0
+    note(ratio >= 0.2, f"freedom.ogg sits {20 * np.log10(max(ratio, 1e-6)):.1f} dB under the theme")
+    print(f"ambience: {ratio:.2f} of the theme's level ({20 * np.log10(max(ratio, 1e-6)):+.1f} dB)")
 
 if problems:
     print()
