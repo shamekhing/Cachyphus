@@ -327,7 +327,7 @@ int main(int argc, char** argv) {
     // smooth default, which is what makes the interface read as 16-bit.
     art::text::load();
 
-    // 320x180 render target, integer-scaled to the window.
+    // 180x360 portrait render target, integer-scaled to the window.
     a.target = LoadRenderTexture(VIRTUAL_W, VIRTUAL_H);
     SetTextureFilter(a.target.texture, TEXTURE_FILTER_POINT);
 

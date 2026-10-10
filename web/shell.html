@@ -13,10 +13,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>CASHYPHUS</title>
   <style>
-    /* The game renders a 320x180 image and lets CSS scale it, so all the layout
-       work is a letterbox. The rest of this exists to stop a mobile browser
-       fighting the game: no scroll, no pinch zoom, no pull-to-refresh, no
-       long-press callout, no tap highlight. */
+    /* The game renders a 180x360 portrait image and lets CSS scale it, so all
+       the layout work is a letterbox. The rest of this exists to stop a mobile
+       browser fighting the game: no scroll, no pinch zoom, no pull-to-refresh,
+       no long-press callout, no tap highlight. */
     :root {
       --vw: 100vw;
       --vh: 100vh;
@@ -49,11 +49,12 @@
       justify-content: center;
     }
 
-    /* 16:9 letterbox against whichever of width or height runs out first. */
+    /* Portrait letterbox: the game renders 180x360 (1:2), so fit it against
+       whichever of width or height runs out first. */
     canvas.emscripten {
       display: block;
-      width: min(var(--vw), calc(var(--vh) * 16 / 9));
-      height: min(var(--vh), calc(var(--vw) * 9 / 16));
+      width: min(var(--vw), calc(var(--vh) / 2));
+      height: min(var(--vh), calc(var(--vw) * 2));
       border: 0;
       background: #0b0a0e;
       image-rendering: pixelated;
@@ -237,6 +238,31 @@
       }
     }, 25000);
 
+    // --- audio unlock -------------------------------------------------------
+    // Phone browsers create the WebAudio context suspended and only let it run
+    // once it has been resumed from inside a real user gesture. The game never
+    // asks (raylib just opens the device at startup), so the first tap has to
+    // do it. raylib's audio (miniaudio) keeps the context on
+    // window.miniaudio.devices[].webaudio; resuming a running context is a
+    // no-op, so this is safe to call on every gesture.
+    function unlockAudio() {
+      try {
+        var ma = window.miniaudio;
+        if (!ma || !ma.devices) return;
+        for (var i = 0; i < ma.devices.length; ++i) {
+          var d = ma.devices[i];
+          if (d && d.webaudio && d.webaudio.state !== 'running' && d.webaudio.resume) {
+            var p = d.webaudio.resume();
+            if (p && p.catch) p.catch(function () {});
+          }
+        }
+      } catch (e) { /* audio is a nicety, never a hard failure */ }
+    }
+
+    ['pointerdown', 'touchstart', 'keydown'].forEach(function (ev) {
+      document.addEventListener(ev, unlockAudio, { passive: true });
+    });
+
     // --- touch -> the game's two keys --------------------------------------
     // The game already reads SPACE (push) and SHIFT (brace) as ordinary key
     // state, so touch is translated into those keys rather than adding a second
@@ -330,6 +356,10 @@
       startBtn.addEventListener('click', function () {
         if (!ready) return;      // cannot normally happen: the button is disabled
         hidePanel();
+        // This tap is the user gesture the browser demands before it will let
+        // WebAudio run, so unlock it here -- the gesture listeners above are
+        // only the fallback.
+        unlockAudio();
         // The title screen is waiting for a press, so give it one. This is sent
         // before asking for fullscreen: the resize that goes with it has been
         // observed to swallow a key sent alongside it.
