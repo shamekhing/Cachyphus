@@ -90,10 +90,11 @@ Because there are no asset files there is nothing to preload, so the whole game 
 of the wasm is the baked music table.
 
 The page is built to be played on a phone as it stands: the canvas letterboxes
-itself to 16:9 against the viewport, and **tap is PUSH, press-and-hold is BRACE**.
-Both the layout and that touch bridge live in `web/shell.html`, which is also
-where any load failure is reported -- a wasm build that fails silently is a blank
-page, which is the worst possible failure mode, so nothing is allowed to fail
+itself to the portrait 1:2 game against the viewport, and **tap is PUSH,
+press-and-hold is BRACE**. Both the layout and that touch bridge live in
+`web/shell.html`, which is also where any load failure is reported -- a wasm
+build that fails silently is a blank page, which is the worst possible failure
+mode, so nothing is allowed to fail
 quietly.
 
 > **The web build has to drive its own main loop.** raylib never calls
@@ -191,7 +192,7 @@ src/
     synth.hpp/.cpp       procedural SFX + the escape motif
     climb.hpp/.cpp       plays the baked climb theme, worn down per life
     music_data.cpp       generated PCM table (tools/gen_music.py)
-  main.cpp      window, 320x180 render target, input, fixed-timestep loop
+  main.cpp      window, 180x360 portrait render target, input, fixed-timestep loop
 assets/         the committed source assets and their licences (CREDITS.md)
 tests/          headless test binary
 tools/          offline asset bakers and preview dumps
@@ -260,7 +261,7 @@ Bracing restores stamina. But the money ball complains the moment you stop. The
 mechanics quietly teach you that the ball's advice is unreliable   which is the
 first step toward the ending where you simply walk away.
 
-**Rendering** draws everything into a 320x180 render target with point
+**Rendering** draws everything into a 180x360 portrait render target with point
 filtering, then blits it to the window at an integer scale with letterboxing, so
 the pixel art stays crisp at any window size.
 
@@ -409,9 +410,9 @@ measurements you need to judge a change without guessing:
 | `IDLE_COMPLAINT_AFTER` | `2.5` | how long you can stop pushing before it starts nagging |
 | `DUR_COLLAPSE` / `_CELEBRATE` / `_SILENCE` / `_ROLLDOWN` / `_WALKIN` / `_WALKAWAY` | `2.0 / 1.6 / 1.2 / 2.0 / 1.5 / 6.0` | length of each story beat, in seconds |
 
-**Presentation** (not gameplay): `VIRTUAL_W` / `VIRTUAL_H` (320x180), `HILL_LEN`,
-`BALL_RADIUS`. Note `BALL_RADIUS` also feeds `ROLL_DEG_PER_PROGRESS`, so changing
-it alters how fast the ball visibly spins as well as how big it looks.
+**Presentation** (not gameplay): `VIRTUAL_W` / `VIRTUAL_H` (180x360 portrait),
+`HILL_LEN`, `BALL_RADIUS`. Note `BALL_RADIUS` also feeds `ROLL_DEG_PER_PROGRESS`,
+so changing it alters how fast the ball visibly spins as well as how big it looks.
 
 ### Recipes
 

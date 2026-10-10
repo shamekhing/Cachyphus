@@ -16,8 +16,8 @@ enum class SpriteId {
     Count,
 };
 
-constexpr int CHAR_W = 12;
-constexpr int CHAR_H = 18;
+constexpr int CHAR_W = 16;
+constexpr int CHAR_H = 28;
 
 // Owns every baked texture for the human character.
 class SpriteBank {
