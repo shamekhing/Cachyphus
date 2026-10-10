@@ -1068,6 +1068,48 @@ static void test_climb_theme() {
     CHECK(worn.bits <= young.bits && worn.hold >= young.hold);
 }
 
+// =============================================================================
+//  Dialogue: what the bubble can hold
+// =============================================================================
+// The bubble wraps at 8px per character into three lines, and its capacity is
+// derived from the frame -- 20 characters at the narrowest frame the game ever
+// draws (180 wide). A line containing a longer word than that cannot be wrapped,
+// so it would push the box out through the side of the screen; that is the class
+// of bug this guards, and it is cheaper to check here than to notice on a phone.
+static void test_dialogue_fits_the_bubble() {
+    section("dialogue: every line fits the bubble");
+    const int maxChars = (180 - 14) / 8;   // scene.cpp's rule at the narrowest frame
+    const int maxLines = 3;
+
+    const auto checkLine = [&](const char* s) {
+        if (s == nullptr) return;
+        int word = 0, longest = 0, chars = 0;
+        for (const char* p = s; *p != '\0'; ++p) {
+            ++chars;
+            if (*p == ' ') { word = 0; continue; }
+            if (++word > longest) longest = word;
+        }
+        CHECK(longest <= maxChars);            // breakable into one line
+        CHECK(chars <= maxChars * maxLines);   // ...and fits in three of them
+    };
+
+    Rng rng{ 12345u };
+    for (int stage = 0; stage < 4; ++stage) {
+        for (int life = 1; life <= 14; ++life) {
+            checkLine(selectLine(static_cast<Stage>(stage), life, rng));
+            checkLine(selectComplaint(static_cast<Stage>(stage), life, rng));
+        }
+    }
+    const int milestones[] = { 5, 10, 20, 50, 100 };
+    for (int m : milestones) checkLine(milestoneLine(m));
+    checkLine(lines::summit);
+    checkLine(lines::silence);
+    checkLine(lines::choiceIntro);
+    checkLine(lines::continue_ok);
+    checkLine(lines::walkGreeting);
+    for (int i = 0; i < lines::walkLeaveCount; ++i) checkLine(lines::walkLeave[i]);
+}
+
 int main() {
     std::printf("CASHYPHUS core tests\n====================\n");
     test_stages_and_aging();
@@ -1094,6 +1136,7 @@ int main() {
     test_audio_voices();
     test_climb_theme();
     test_frame_fit();
+    test_dialogue_fits_the_bubble();
 
     std::printf("\n%d/%d checks passed\n", g_checks - g_fail, g_checks);
     return g_fail == 0 ? 0 : 1;

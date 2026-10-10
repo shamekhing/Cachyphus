@@ -1,5 +1,6 @@
 #include "render/hud.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -77,9 +78,11 @@ void drawTitle(const Palette& pal) {
     const Color dim  = toColor(pal.uiDim);
     const Color txt  = toColor(pal.uiText);
 
-    // The overlay is centred in the frame, so it follows the frame's extra height
-    // rather than sitting high on a tall phone screen.
-    const int top = frameTop();
+    // The overlay is centred in the frame, so it follows half the frame's extra
+    // height. Half, not all of it: the whole offset would push the block past the
+    // middle, and on a frame shorter than the design it is negative -- which is how
+    // the title ended up drawn across the meters on a phone with the URL bar up.
+    const int top = frameTop() / 2;
     txt::drawCenter("CASHYPHUS", 58 + top, txt::SIZE_MEDIUM, gold);
     txt::drawCenter("One hill.", 94 + top, txt::SIZE_SMALL, txt);
     txt::drawCenter("One lifetime.", 106 + top, txt::SIZE_SMALL, txt);
@@ -94,7 +97,8 @@ void drawTitle(const Palette& pal) {
 void drawChoice(const Palette& pal) {
     const int w = 168, h = 78;
     const int x = (VIRTUAL_W - w) / 2;
-    const int y = 46 + frameTop();
+    // Never above the status bars, however short the frame is.
+    const int y = std::max(26, 46 + frameTop() / 2);
     panel(x, y, w, h, pal);
 
     const Color txt = toColor(pal.uiText);
@@ -114,7 +118,7 @@ void drawChoice(const Palette& pal) {
 
 void drawWalkAwayText(const Game& g, const Palette& pal) {
     if (g.walkT() > 0.45f && g.walkT() < 0.96f) {
-        const int top = frameTop();
+        const int top = frameTop() / 2;
         DrawRectangle(0, 146 + top, VIRTUAL_W, 26, Color{ 12, 10, 16, 150 });
         const Color ink = toColor(pal.uiText);
         txt::drawCenter("You cannot buy back", 150 + top, txt::SIZE_SMALL, ink);
@@ -131,7 +135,7 @@ void drawCredits(const Game& g, const Palette& pal) {
     // line is 22 characters at the most. Anything longer is silently clipped by
     // the render target on BOTH sides -- which is how the ending screen used to
     // lose the first and last few letters of every sentence.
-    const int top = frameTop();
+    const int top = frameTop() / 2;
     txt::drawCenter("You can leave.", 84 + top, txt::SIZE_SMALL, txt);
     txt::drawCenter("But the hill will", 96 + top, txt::SIZE_SMALL, txt);
     txt::drawCenter("always find someone", 108 + top, txt::SIZE_SMALL, txt);

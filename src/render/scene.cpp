@@ -1,5 +1,6 @@
 #include "render/scene.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -556,7 +557,10 @@ void drawCharacter(const Game& g, const SpriteBank& sb, const Palette& pal) {
 //  The ball talks a lot and the brief insists the bubble stays small, so the
 //  text wraps rather than stretching the box across the screen.
 // =============================================================================
-constexpr int MAX_BUBBLE_W = 158;   // must fit inside the 180px portrait frame
+// Everything the ball says stays clear of the status bars. The bars are drawn in
+// frame space; the bubble is drawn in world space, so the two are reconciled where
+// the bubble is placed. At the design height this is 26px of frame.
+constexpr int kBubbleFloor = 26;
 
 void speechBubble(const char* text, int cx, int cy, const Palette& pal, int reveal) {
     if (text == nullptr) return;
@@ -570,11 +574,14 @@ void speechBubble(const char* text, int cx, int cy, const Palette& pal, int reve
     std::memcpy(buf, text, static_cast<std::size_t>(len));
     buf[len] = '\0';
 
-    // The baked face advances a full 8px per character, so several of the
-    // ball's longer lines would run clean off the screen unwrapped.
-    constexpr int MAX_CHARS = (MAX_BUBBLE_W - 10) / art::text::CELL_W;
-    constexpr int MAX_LINES = 3;
-    char lines[MAX_LINES][128] = {};
+    // The baked face advances a full 8px per character, so several of the ball's
+    // longer lines would run clean off the screen unwrapped. The capacity is
+    // computed from the frame the display asked for rather than a fixed width --
+    // 20 characters a line on a phone, 29 on a tablet -- which also means the
+    // bubble can never come out wider than the frame it has to live in.
+    const int maxChars = std::max(8, (VIRTUAL_W - 14) / art::text::CELL_W);
+    const int maxLines = 3;
+    char lines[maxLines][128] = {};
     int  nlines = 1;
     int  col    = 0;
     for (const char* p = buf; *p != '\0';) {
@@ -583,7 +590,7 @@ void speechBubble(const char* text, int cx, int cy, const Palette& pal, int reve
         const int wlen = static_cast<int>(p - ws);
         while (*p == ' ') ++p;
 
-        if (col > 0 && col + 1 + wlen > MAX_CHARS && nlines < MAX_LINES) {
+        if (col > 0 && col + 1 + wlen > maxChars && nlines < maxLines) {
             ++nlines;
             col = 0;
         }
@@ -604,9 +611,14 @@ void speechBubble(const char* text, int cx, int cy, const Palette& pal, int reve
     int by = cy - h - 8;
     if (bx < 2) bx = 2;
     if (bx + w > VIRTUAL_W - 2) bx = VIRTUAL_W - 2 - w;
-    // Near the summit there is no room above the ball, so the bubble simply
-    // hugs the top of the frame rather than flipping underneath itself.
-    if (by < 2) by = 2;
+    // The floor is not the top of the frame. The bubble is drawn inside the world's
+    // translation, so its y is in world space: the bottom of the status bars, which
+    // are drawn in frame space, is at frameTop() further down. Clamping to 2 -- a
+    // world-space constant -- put the bubble above the frame on a short frame (a
+    // phone with the URL bar showing) where frameTop() is negative, so it came out
+    // clipped at the top and lying across the meters.
+    const int floorY = kBubbleFloor - frameTop();
+    if (by < floorY) by = floorY;
 
     DrawRectangle(bx, by, w, h, toColor(pal.bubbleBg, 235));
     DrawRectangleLines(bx, by, w, h, toColor(pal.bubbleEdge));
@@ -634,16 +646,11 @@ void draw(const Game& g, const Palette& pal, const SpriteBank& sprites) {
 
     // Everything from here down is the world, laid out in the design frame. A
     // display taller than 1:2 grows the frame instead of padding it, and the world
-    // is translated down by exactly that much. At the design size this translate
-    // is zero, so the picture is pixel for pixel what it always was; on a phone the
+    // is translated down by exactly that much: at the design size this offset is
+    // zero, so the picture is pixel for pixel what it always was, and on a phone the
     // extra height is more sky above a scene that has not moved or stretched. The
-    // sky and clouds stay above the push, because they belong to the frame.
-    // Everything from here down is the world, laid out in the design frame. A
-    // display taller than 1:2 grows the frame instead of padding it, and the world
-    // is translated down by exactly that much. At the design size this offset is
-    // zero, so the picture is pixel for pixel what it always was; on a phone the
-    // extra height is more sky above a scene that has not moved or stretched. The
-    // sky and clouds stay above the push, because they belong to the frame.
+    // sky, the sun and the clouds are drawn above the push, because they belong to
+    // the frame and not to the hill.
     const Camera2D world{{ 0.0f, static_cast<float>(frameTop()) }, { 0.0f, 0.0f }, 0.0f, 1.0f };
     BeginMode2D(world);
 
