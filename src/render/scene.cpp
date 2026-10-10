@@ -147,16 +147,63 @@ void drawParallax(const Palette& pal, float rise) {
     }
 }
 
+// Deterministic 0..1 hash of a screen cell, so the terrain detail and the
+// vegetation sit in fixed spots and never swim as the ball moves.
+float hash01(int a, int b) {
+    unsigned int h = static_cast<unsigned int>(a * 374761393u + b * 668265263u);
+    h = (h ^ (h >> 13u)) * 1274126177u;
+    h ^= (h >> 16u);
+    return static_cast<float>(h & 0xFFFFFFu) / 16777215.0f;
+}
+
+// Grass tufts and stones sitting on the surface line, placed by the hash so
+// they are in the same spot every frame.
+void drawVegetation(const Palette& pal) {
+    const Color tuft  = lerpColor(toColor(pal.hillFar), toColor(pal.uiGood), 0.30f);
+    const Color stone = toColor(pal.hillEdge);
+    for (int col = 0; col < VIRTUAL_W; col += 6) {
+        const float gy = World::groundY(static_cast<float>(col));
+        if (gy > VIRTUAL_H + 4.0f) continue;
+        const float r0 = hash01(col, 17);
+        const float r1 = hash01(col, 91);
+        const int   x  = col + static_cast<int>(hash01(col, 43) * 4.0f);
+        const int   y  = static_cast<int>(gy);
+        if (r0 < 0.34f) {                        // a grass tuft: three thin blades
+            const int bh = 2 + static_cast<int>(r1 * 3.0f);
+            DrawLine(x,     y, x - 1, y - bh,     tuft);
+            DrawLine(x + 1, y, x + 1, y - bh - 1, tuft);
+            DrawLine(x + 2, y, x + 3, y - bh,     tuft);
+        } else if (r0 < 0.46f) {                 // a small stone half-buried
+            const int sw = 2 + static_cast<int>(r1 * 3.0f);
+            DrawRectangle(x, y - 2, sw, 2, stone);
+        }
+    }
+}
+
+// A flag planted at the top of the hill: the summit the whole climb is aimed
+// at, visible from the first push.
+void drawSummit(const Palette& pal) {
+    const int   x0   = VIRTUAL_W - 10;
+    const int   y0   = static_cast<int>(World::groundY(static_cast<float>(x0)));
+    const Color pole = toColor(pal.hillEdge);
+    const Color flag = toColor(pal.uiWarn);
+    DrawLine(x0, y0, x0, y0 - 14, pole);
+    DrawLine(x0, y0 - 14, x0 + 7, y0 - 11, flag);
+    DrawLine(x0 + 7, y0 - 11, x0, y0 - 8, flag);
+}
+
 // The hill: one vertical strip per screen column, filling everything below the
 // diagonal surface. The surface rises from the bottom-left corner to the
 // top-right, so the ball travelling along it climbs the frame. It is filled in
-// two tones -- a lit band hugging the surface and a darker body beneath -- so
-// the slope reads as solid rather than a flat slab.
+// two tones -- a lit band hugging the surface and a darker body beneath -- and
+// carries the brief's terrain (speckle, a winding path, vegetation) and a
+// summit marker, so the slope reads as a place rather than a fill.
 void drawHill(const Palette& pal) {
     const Color nearC = toColor(pal.hillNear);
     const Color edge  = toColor(pal.hillEdge);
     const Color path  = toColor(pal.path);
     const Color body  = lerpColor(nearC, toColor(pal.outline), 0.42f);
+    const Color dark  = lerpColor(nearC, body, 0.5f);
 
     for (int sx = 0; sx < VIRTUAL_W; ++sx) {
         const int y  = static_cast<int>(World::groundY(static_cast<float>(sx)));
@@ -164,8 +211,24 @@ void drawHill(const Palette& pal) {
         DrawLine(sx, y,  sx, cl,        nearC);   // lit surface band
         DrawLine(sx, cl, sx, VIRTUAL_H, body);    // darker body beneath
         DrawPixel(sx, y, edge);
-        DrawPixel(sx, y + 1, path);
     }
+
+    // Static speckle in the lit band, so the surface reads as ground.
+    for (int sx = 0; sx < VIRTUAL_W; sx += 3) {
+        const int gy = static_cast<int>(World::groundY(static_cast<float>(sx)));
+        if (hash01(sx, 5) < 0.3f)
+            DrawPixel(sx, gy + 3 + static_cast<int>(hash01(sx, 9) * 14.0f), dark);
+    }
+
+    // A winding path hugging the surface, meandering a touch as it climbs.
+    for (int sx = 0; sx < VIRTUAL_W; ++sx) {
+        const float wob = std::sin(static_cast<float>(sx) * 0.11f) * 2.0f;
+        const int   y   = static_cast<int>(World::groundY(static_cast<float>(sx)) + 2.0f + wob);
+        DrawLine(sx, y, sx, y + 1, path);
+    }
+
+    drawVegetation(pal);
+    drawSummit(pal);
 }
 
 // -----------------------------------------------------------------------------
