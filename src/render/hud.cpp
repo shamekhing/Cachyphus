@@ -98,11 +98,15 @@ void drawChoice(const Palette& pal) {
     txt::drawCenter("Well, shall we?", y + 6, txt::SIZE_SMALL, toColor(pal.ballBand));
     DrawRectangle(x + 8, y + 20, w - 16, 1, toColor(pal.uiDim));
 
+    // The two endings have to be legible on the device in front of you: a tap
+    // and a hold on a phone, a click and a right-click on a desktop. The keys
+    // still work (web/shell.html spells them out, and the README lists them),
+    // but a phone has no Space key to read.
     txt::drawCenter("KEEP PUSHING", y + 26, txt::SIZE_SMALL, toColor(pal.uiWarn));
-    txt::drawCenter("[SPACE or CLICK]", y + 38, txt::SIZE_SMALL, txt);
+    txt::drawCenter("[TAP / CLICK]", y + 38, txt::SIZE_SMALL, txt);
 
     txt::drawCenter("WALK AWAY", y + 54, txt::SIZE_SMALL, toColor(pal.uiGood));
-    txt::drawCenter("[SHIFT or R-CLICK]", y + 66, txt::SIZE_SMALL, txt);
+    txt::drawCenter("[HOLD / R-CLICK]", y + 66, txt::SIZE_SMALL, txt);
 }
 
 void drawWalkAwayText(const Game& g, const Palette& pal) {

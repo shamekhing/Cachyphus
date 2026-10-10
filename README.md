@@ -22,13 +22,15 @@ so the repository contains no binary assets at all.
 |---|---|
 | **Left-click**, **SPACE** or **Up** | Push: shove the ball uphill, spending stamina |
 | **Hold right-click**, **SHIFT** or **Down** | Brace: hold the ball still and recover stamina, spending grip |
-| **Left-click** / **SPACE** on the choice screen | Keep pushing (the cycle continues) |
-| **Right-click** / **SHIFT** on the choice screen | Walk away (the escape ending) |
+| **Tap** / **left-click** / **SPACE** on the choice screen | Keep pushing (the cycle continues) |
+| **Hold** / **right-click** / **SHIFT** on the choice screen | Walk away (the escape ending) |
 | **F** (web build) | Fullscreen |
 
 On a phone there is nothing to click: the touch bridge in `web/shell.html` is the
 whole control surface, and it is **tap = PUSH, press-and-hold = BRACE** and
-nothing else -- there is no swipe, no second finger and no on-screen pad.
+nothing else -- there is no swipe, no second finger and no on-screen pad. The
+same two verbs answer the ending, which is the one place a phone cannot copy a
+keyboard: **tap keeps pushing, hold walks away.**
 
 The two verbs and *when* to use them are the entire game. Topping up stamina
 requires standing still, which the ball loudly objects to.

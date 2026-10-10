@@ -673,6 +673,11 @@ static GameRun runGame(ChoicePolicy policy, int stopAfterChoices, int maxFrames 
                 break;
             }
             case Phase::Choice:
+                // The two answers, expressed with exactly the inputs the phone's
+                // touch bridge produces: a tap is a SPACE press edge, a hold is a
+                // SHIFT press edge. So "Push" here is the phone's tap and "Walk"
+                // is the phone's press-and-hold, which is why the panel is
+                // labelled TAP and HOLD rather than SPACE and SHIFT.
                 ++r.choiceCount;
                 if (r.firstChoiceIncarnation == 0) r.firstChoiceIncarnation = g.incarnation();
                 r.lastChoiceIncarnation = g.incarnation();

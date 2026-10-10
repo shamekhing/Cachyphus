@@ -7,7 +7,8 @@
 //
 //   touch  a tap becomes SPACE and a press-and-hold becomes SHIFT. The whole
 //          thing is a timer, and getting it wrong gives either no push or a
-//          brace key that stays stuck down.
+//          brace key that stays stuck down. These two verbs are also the two
+//          endings, so a tap has to keep pushing and a hold has to walk away.
 //   mouse  a button released OUTSIDE the canvas is re-dispatched to it. The
 //          engine polls the button every frame, so a release it never sees
 //          leaves the brace on for ever.
