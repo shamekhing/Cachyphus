@@ -27,6 +27,7 @@ struct World {
     static constexpr float BALL_X1 = 166.0f;       // ball x at progress 1
 
     static float groundY(float screenX);                  // ground height at screen x
+    static float groundSlope(float screenX);              // d(groundY)/d(screenX) there
     static float ballX(float progress);                   // progress -> ball centre x
     static float ballY(float progress);                   // progress -> ball centre y
     static float contactY(float screenX);                 // ground under a given x

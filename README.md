@@ -8,7 +8,7 @@
 
 A pixel-art allegory: a person spends their whole life pushing a giant, talking
 ball of money up a hill. They age as they climb. At the summit they die. The ball
-rolls back down. Someone else begins. After four lives, the game finally offers
+rolls back down. Someone else begins. After three lives, the game finally offers
 you a choice: **keep pushing, or walk away.**
 
 Built with **C++17 + raylib**. Every sprite and every sound is generated in code,
@@ -18,12 +18,17 @@ so the repository contains no binary assets at all.
 
 ## Controls
 
-| Key | Action |
+| Input | Action |
 |---|---|
-| **SPACE** (or Up / Left-mouse) | Push shove the ball uphill, spending stamina |
-| **SHIFT** (or Down) | Brace / hold the ball still and recover stamina, spending grip |
-| **SPACE** on the choice screen | Keep pushing (the cycle continues) |
-| **SHIFT** on the choice screen | Walk away (the escape ending) |
+| **Left-click**, **SPACE** or **Up** | Push: shove the ball uphill, spending stamina |
+| **Hold right-click**, **SHIFT** or **Down** | Brace: hold the ball still and recover stamina, spending grip |
+| **Left-click** / **SPACE** on the choice screen | Keep pushing (the cycle continues) |
+| **Right-click** / **SHIFT** on the choice screen | Walk away (the escape ending) |
+| **F** (web build) | Fullscreen |
+
+On a phone there is nothing to click: the touch bridge in `web/shell.html` is the
+whole control surface, and it is **tap = PUSH, press-and-hold = BRACE** and
+nothing else -- there is no swipe, no second finger and no on-screen pad.
 
 The two verbs and *when* to use them are the entire game. Topping up stamina
 requires standing still, which the ball loudly objects to.
@@ -164,7 +169,7 @@ ctest --test-dir build/debug --output-on-failure
 
 The suite covers stage/age boundaries, push & stamina, gravity rollback, the
 grip/slip hysteresis, palette interpolation, dialogue selection, and a full
-auto-played run through the state machine (four lives -> the choice -> both
+auto-played run through the state machine (three lives -> the choice -> both
 endings). It also *measures pacing*: a competent auto-player finishes a life in
 roughly 45-80 s, and even a slow masher is never softlocked.
 
@@ -189,7 +194,8 @@ src/
     font.hpp/.cpp        the baked 8px pixel face, and text helpers
     font_data.hpp        generated glyph table (tools/gen_font.py)
   audio/
-    synth.hpp/.cpp       procedural SFX + the escape motif
+    voices.hpp           the nine effects, as pure functions of the sample index
+    synth.hpp/.cpp       bakes them into Sounds + the escape motif
     climb.hpp/.cpp       plays the baked climb theme, worn down per life
     music_data.cpp       generated PCM table (tools/gen_music.py)
   main.cpp      window, 180x360 portrait render target, input, fixed-timestep loop
@@ -265,9 +271,12 @@ first step toward the ending where you simply walk away.
 filtering, then blits it to the window at an integer scale with letterboxing, so
 the pixel art stays crisp at any window size.
 
-**Audio** has no files: `audio/synth.cpp` fills sample buffers at 44.1 kHz to
-build every effect, and drives a small step-sequencer through a raylib
-`AudioStream` for the looping soundtrack. If the machine has no audio device the
+**Audio** has no files. `audio/voices.hpp` is raylib-free and defines every
+effect as a pure function of the sample index -- noise from an integer hash,
+box-filtered to band-limit it and to take the DC out -- so each voice can be
+rendered and measured by the headless tests. `audio/synth.cpp` bakes those into
+44.1 kHz sample buffers, soft-clips them for headroom, and drives the looping
+soundtrack through a raylib `AudioStream`. If the machine has no audio device the
 whole layer becomes a no-op and the game runs silently.
 
 ---
@@ -309,9 +318,10 @@ python3 tools/gen_music.py track.wav     # a loop             -> music_data.cpp
 Where those assets come from, and under what licences, is in
 **[assets/CREDITS.md](assets/CREDITS.md)**.
 
-**Touch-bridge test**   checks the page's tap-vs-hold translation without needing
-a browser: it loads the built page's inline script against a stub DOM and fires
-synthetic touch events at it. Run it against a page you have already built:
+**Input-bridge test**   checks the page's tap-vs-hold translation and the mouse
+release safety net without needing a browser: it loads the built page's inline
+script against a stub DOM and fires synthetic touch and mouse events at it. Run
+it against a page you have already built:
 
 ```bash
 node web/test_touch.js build-web/cashyphus.html
@@ -405,7 +415,7 @@ measurements you need to judge a change without guessing:
 
 | Knob | Now | Effect |
 |---|---|---|
-| `CHOICE_AFTER_LIVES` | `4` | lives before the keep-pushing / walk-away choice appears |
+| `CHOICE_AFTER_LIVES` | `3` | lives before the keep-pushing / walk-away choice appears |
 | `LINE_MIN_TIME` | `3.5` | minimum spacing between the ball's ambient lines |
 | `IDLE_COMPLAINT_AFTER` | `2.5` | how long you can stop pushing before it starts nagging |
 | `DUR_COLLAPSE` / `_CELEBRATE` / `_SILENCE` / `_ROLLDOWN` / `_WALKIN` / `_WALKAWAY` | `2.0 / 1.6 / 1.2 / 2.0 / 1.5 / 6.0` | length of each story beat, in seconds |
@@ -459,6 +469,10 @@ fails loudly instead of quietly ruining the game:
   one to watch when tuning anything age- or grip-related.
 - **The final years still gain ground**, rather than stalling in a slip loop.
 - **The ball rolls the right way.** Positive spin is clockwise on screen.
+- **The effects are textures, not clicks.** Every voice is rendered and measured
+  with no audio device at all: no DC offset, no peak past the 0.8 headroom
+  budget, and nothing that starts or ends on a step. A "noise" effect that is
+  really a constant gated by an envelope is what static sounds like.
 
 ---
 

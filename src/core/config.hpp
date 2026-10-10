@@ -103,7 +103,7 @@ constexpr float CYCLE_GRAVITY_STEP = 0.080f; // +8% downhill pull per life
 constexpr int   CYCLE_GRAVITY_CAP  = 5;      // ...up to +40% from the 6th life on
 
 // --- Progression / narrative --------------------------------------------------
-constexpr int   CHOICE_AFTER_LIVES  = 4;    // choice appears once 4 lives are spent
+constexpr int   CHOICE_AFTER_LIVES  = 3;    // choice appears once 3 lives are spent
 constexpr float IDLE_COMPLAINT_AFTER = 2.5f; // ball nags after this long without a push
 constexpr float LINE_MIN_TIME        = 3.5f; // min spacing between ambient lines
 

@@ -30,6 +30,14 @@ float World::groundY(float screenX) {
     return GROUND_BASE - GROUND_RISE * std::pow(t, GROUND_CURVE);
 }
 
+// Analytic slope of the surface, dy/dx: the exact derivative of groundY above.
+// Negative on the way up (screen y grows downwards) and it steepens as the hill
+// climbs. Shadows use it to lie flat along the hill instead of hovering over it.
+float World::groundSlope(float screenX) {
+    const float t = clampf(screenX / VIRTUAL_W, 0.001f, 1.5f);
+    return -GROUND_RISE * GROUND_CURVE * std::pow(t, GROUND_CURVE - 1.0f) / VIRTUAL_W;
+}
+
 float World::ballX(float progress) {
     const float p = clampf(progress, 0.0f, 1.0f);
     return BALL_X0 + (BALL_X1 - BALL_X0) * p;
@@ -154,6 +162,62 @@ float hash01(int a, int b) {
     h = (h ^ (h >> 13u)) * 1274126177u;
     h ^= (h >> 16u);
     return static_cast<float>(h & 0xFFFFFFu) / 16777215.0f;
+}
+
+// -----------------------------------------------------------------------------
+//  Ground shadows
+//
+//  The hill is steep -- close to 60 degrees up top -- and a screen-axis-aligned
+//  ellipse is simply the wrong shape for a shadow on it. Half of such an ellipse
+//  lands on the sky side of the surface line, where it reads as a grey blob
+//  floating beside the ball, and the half that lands on the hill is smeared
+//  across the surface instead of lying along it.
+//
+//  Shadows are therefore rasterised in the surface's own frame: stretched along
+//  the uphill/downhill tangent, squashed against the surface normal, and clipped
+//  so nothing is ever drawn above the ground line. The result hugs the slope.
+// -----------------------------------------------------------------------------
+
+// Where a ball centred at (cx, cy) actually touches the hill. The ball is drawn
+// with a plain vertical offset -- centred one radius above the ground line --
+// which on a slope puts its true point of contact noticeably UP the hill from
+// its centre column. Dropping a perpendicular onto the surface from the centre
+// finds it, so the shadow can be anchored there rather than under the middle.
+void contactPoint(float cx, float cy, float& outX, float& outY) {
+    const float m  = World::groundSlope(cx);
+    const float gy = World::groundY(cx);
+    const float t  = (cy - gy) * m / (1.0f + m * m);   // projection along the surface
+    outX = cx + t;
+    outY = gy + m * t;
+}
+
+// A soft shadow lying on the slope: an ellipse whose long axis follows the
+// surface and whose short axis presses into it, with everything above the ground
+// line discarded. That clip is what stops it bleeding into the sky.
+void slopeShadow(float cx, float cy, float halfLong, float halfThick, Color color) {
+    const float m   = World::groundSlope(cx);
+    const float inv = 1.0f / std::sqrt(1.0f + m * m);
+    const float tx  = inv,      ty = m * inv;   // unit tangent, +x = uphill
+    const float nx  = -m * inv, ny = inv;       // unit normal, +y = into the hill
+
+    const int reach = static_cast<int>(halfLong) + 2;
+    const int x0 = static_cast<int>(cx) - reach;
+    const int x1 = static_cast<int>(cx) + reach;
+    const int y0 = static_cast<int>(cy) - reach;
+    const int y1 = static_cast<int>(cy) + reach;
+
+    for (int sy = y0; sy <= y1; ++sy) {
+        for (int sx = x0; sx <= x1; ++sx) {
+            const float ox = static_cast<float>(sx) - cx;
+            const float oy = static_cast<float>(sy) - cy;
+            const float u  = ox * tx + oy * ty;    // along the surface
+            const float v  = ox * nx + oy * ny;    // ...and into it
+            if (v < 0.0f) continue;                // sky side: never draw
+            const float fu = u / halfLong, fv = v / halfThick;
+            if (fu * fu + fv * fv > 1.0f) continue;
+            DrawPixel(sx, sy, color);
+        }
+    }
 }
 
 // Grass tufts and stones sitting on the surface line, placed by the hash so
@@ -462,8 +526,10 @@ void drawCharacter(const Game& g, const SpriteBank& sb, const Palette& pal) {
     const int sx = static_cast<int>(wx) - CHAR_W / 2;
     const int sy = static_cast<int>(gy - CHAR_H + 2 + bob);
 
-    DrawRectangle(sx + 2, static_cast<int>(gy) - 1, CHAR_W - 4, 2,
-                  toColor(pal.ballShadow, 90));
+    // Feet shadow: same slope-hugging treatment as the ball, just smaller. A
+    // horizontal bar under the boots read as a step, not a shadow, on a hill
+    // this steep.
+    slopeShadow(wx, gy, 9.0f, 4.0f, toColor(pal.ballShadow, 95));
 
     DrawTexture(tex, sx, sy, WHITE);
 }
@@ -556,11 +622,14 @@ void draw(const Game& g, const Palette& pal, const SpriteBank& sprites) {
 
     const float bx = World::ballX(g.ballProgress());
     const float by = World::ballY(g.ballProgress());   // centre, resting on the slope
-    const float gy = World::groundY(bx);
 
-    // Contact shadow, flattened onto the slope.
-    DrawEllipse(static_cast<int>(bx), static_cast<int>(gy) - 1, 22.0f, 5.0f,
-                toColor(pal.ballShadow, 80));
+    // Contact shadow. Anchored at the point the ball actually touches the slope
+    // (uphill of its centre column, because it is offset vertically) and laid
+    // along the surface, so it reads as the ball meeting the hill -- not as a
+    // grey blob floating in the sky beside it.
+    float shx = bx, shy = by;
+    contactPoint(bx, by, shx, shy);
+    slopeShadow(shx, shy, 34.0f, 6.0f, toColor(pal.ballShadow, 90));
 
     drawCharacter(g, sprites, pal);
 
