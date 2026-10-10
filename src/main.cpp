@@ -208,20 +208,19 @@ void saveTarget(const RenderTexture2D& target, const std::string& file) {
     UnloadImage(img);
 }
 
-// --- letterboxed presentation ------------------------------------------------
+// The frame is what fills the display: frameFor() chose a whole-number scale and
+// grew the frame itself, so all that is left here is blitting it up at that scale,
+// with at most a pixel of slack on each edge.
 void present(const RenderTexture2D& target) {
     const int sw = GetScreenWidth();
     const int sh = GetScreenHeight();
-    int scale = sw / VIRTUAL_W;
-    if (sh / VIRTUAL_H < scale) scale = sh / VIRTUAL_H;
-    if (scale < 1) scale = 1;
 
-    const float dw = static_cast<float>(VIRTUAL_W * scale);
-    const float dh = static_cast<float>(VIRTUAL_H * scale);
+    const float dw = static_cast<float>(VIRTUAL_W * FRAME_SCALE);
+    const float dh = static_cast<float>(VIRTUAL_H * FRAME_SCALE);
     const Rectangle src{ 0.0f, 0.0f,
                          static_cast<float>(target.texture.width),
                          -static_cast<float>(target.texture.height) };
-    const Rectangle dst{ (sw - dw) * 0.5f, (sh - dh) * 0.5f, dw, dh };
+    const Rectangle dst{ std::floor((sw - dw) * 0.5f), std::floor((sh - dh) * 0.5f), dw, dh };
     DrawTexturePro(target.texture, src, dst, { 0.0f, 0.0f }, 0.0f, WHITE);
 }
 
@@ -246,6 +245,26 @@ struct App {
 
 App g_app;
 
+// Pick the frame for the display, and rebuild the render target when it changes.
+// Called once at startup and again whenever the window resizes -- which on the web
+// is every time the page re-fits the canvas: a rotation, or the URL bar moving the
+// visual viewport under a phone. Rebuilding is the expensive part, so it only
+// happens when the answer actually differs.
+void fitFrame() {
+    App& a = g_app;
+    const FrameFit f = frameFor(GetScreenWidth(), GetScreenHeight());
+    if (a.target.id != 0 && f.width == VIRTUAL_W && f.height == VIRTUAL_H) return;
+
+    VIRTUAL_W = f.width;
+    VIRTUAL_H = f.height;
+    FRAME_SCALE = f.scale;
+    if (a.target.id != 0) UnloadRenderTexture(a.target);
+    a.target = LoadRenderTexture(VIRTUAL_W, VIRTUAL_H);
+    SetTextureFilter(a.target.texture, TEXTURE_FILTER_POINT);
+    TraceLog(LOG_INFO, "CASHYPHUS: frame %dx%d at %dx in a %dx%d display",
+             VIRTUAL_W, VIRTUAL_H, FRAME_SCALE, GetScreenWidth(), GetScreenHeight());
+}
+
 void renderFrame() {
     const Palette pal = framePalette(g_app.game);
     BeginTextureMode(g_app.target);
@@ -260,6 +279,10 @@ void renderFrame() {
 void frameStep() {
     App& a = g_app;
     if (WindowShouldClose()) { a.running = false; return; }
+    // A resized window can mean a different frame. Re-checking is a pair of
+    // GetScreenWidth/Height calls, and the frame only changes when the display is
+    // actually a different shape.
+    if (IsWindowResized() || a.target.id == 0) fitFrame();
 
     if (a.opts.capture) {
         a.accum += 20.0f * FIXED_DT;   // fast-forward so a walkthrough is quick
@@ -341,21 +364,21 @@ int main(int argc, char** argv) {
     SetConfigFlags(flags);
 
 #if defined(__EMSCRIPTEN__)
-    // On the web the canvas is sized by CSS, so the backing resolution is raised
-    // instead: 3x stays crisp when the letterbox scales it up on a phone.
+    // On the web the canvas box is owned by the page, which re-fits it every frame;
+    // this is only the initial backing size, and fitFrame() takes the real one from
+    // the canvas as soon as it exists.
     InitWindow(VIRTUAL_W * 3, VIRTUAL_H * 3, "CASHYPHUS");
 #else
-    // On the desktop the window itself has to fit the display. A hard-coded 3x
-    // is 540x1080 -- exactly the height of a 1080p screen -- so the title bar
-    // and the dock get pushed off the bottom and the first thing a PC player
-    // sees is a window that does not fit their monitor. Open at 2x, then grow
-    // to the largest integer scale the screen can actually hold, keeping 96px
-    // of headroom for a title bar and a taskbar.
+    // On the desktop the window itself has to fit the display, and the first thing
+    // a PC player should see is a window that does. So: take the monitor, leave
+    // 96px of headroom for a title bar and a taskbar, work out the frame that fills
+    // what is left, and open at exactly that size. On a 1440x900 screen that is
+    // 360x804 instead of the fixed 360x720 this used to open at, which left a fifth
+    // of the height unused.
     InitWindow(VIRTUAL_W * 2, VIRTUAL_H * 2, "CASHYPHUS");
-    int scale = 3;
-    const int room = GetMonitorHeight(GetCurrentMonitor()) - 96;
-    while (scale > 1 && VIRTUAL_H * scale > room) --scale;
-    SetWindowSize(VIRTUAL_W * scale, VIRTUAL_H * scale);
+    const FrameFit fit = frameFor(GetMonitorWidth(GetCurrentMonitor()),
+                                  GetMonitorHeight(GetCurrentMonitor()) - 96);
+    SetWindowSize(fit.width * fit.scale, fit.height * fit.scale);
     SetWindowMinSize(VIRTUAL_W, VIRTUAL_H);   // 1x, so every display can shrink it
 #endif
     SetTargetFPS(a.opts.capture ? 0 : 60);
@@ -364,9 +387,9 @@ int main(int argc, char** argv) {
     // smooth default, which is what makes the interface read as 16-bit.
     art::text::load();
 
-    // 180x360 portrait render target, integer-scaled to the window.
-    a.target = LoadRenderTexture(VIRTUAL_W, VIRTUAL_H);
-    SetTextureFilter(a.target.texture, TEXTURE_FILTER_POINT);
+    // The portrait frame, sized to this display: as much of the screen as an
+    // integer-scaled 1:2 playfield can take, with no letterbox padding.
+    fitFrame();
 
     InitAudioDevice();
     a.synth.init();

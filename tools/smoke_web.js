@@ -1,10 +1,12 @@
 // End-to-end check of a staged web build, run in CI so a broken page cannot be
 // published. It serves the directory, loads it in Chromium, and fails on the
-// three ways a wasm build actually goes wrong:
+// ways a wasm build actually goes wrong:
 //
 //   1. an exception (GLFW init, missing Module.canvas, async support, ...)
 //   2. the canvas never changing -- a black, hung or never-started screen
 //   3. the start flow not dismissing the panel
+//   4. the canvas box and the pixels in it having different shapes (a squash)
+//   5. the game's frame leaving padding around the display instead of filling it
 //
 // Liveness is checked by comparing two screenshots rather than by decoding
 // pixels: a running game always changes frame to frame (the clouds drift), and
@@ -155,6 +157,32 @@ function fail(msg) { console.error('smoke FAIL: ' + msg); process.exit(1); }
     }));
   }));
 
+  // --- the frame has to fill the display ------------------------------------
+  // The game picks its own frame from the canvas size (cfg::frameFor). It used to
+  // draw a fixed 1:2 target and letterbox the rest, which threw away 15% of a
+  // 1170x2532 phone screen and 10% of a 1440x900 monitor -- and every check in
+  // this file passed anyway, because a letterbox is inside the canvas where no
+  // measurement was looking. The game logs the frame it chose, so this reads it
+  // back and requires it to cover the display at a whole-number scale.
+  const checkFrame = (tag, logs) => {
+    const hits = logs
+      .map((l) => /CASHYPHUS: frame (\d+)x(\d+) at (\d+)x in a (\d+)x(\d+) display/.exec(l))
+      .filter(Boolean);
+    if (!hits.length) fail(`the game never reported a frame (${tag})`);
+    const [, fw, fh, k, dw, dh] = hits[hits.length - 1].map(Number);
+    console.log(`smoke: ${tag} draws a ${fw}x${fh} frame at ${k}x in a ${dw}x${dh} display`);
+    if (fw < 180 || fh < 360) fail(`frame is smaller than the art it was drawn for (${tag}: ${fw}x${fh})`);
+    if (fh <= fw) fail(`frame came out landscape, which the hill cannot climb (${tag}: ${fw}x${fh})`);
+    // The height is always taken in full, to within the leftover an integer scale
+    // cannot use. The width too, but only where the display is portrait: a phone.
+    if (fh * k < dh - (k - 1)) {
+      fail(`frame leaves ${dh - fh * k}px of padding above and below (${tag})`);
+    }
+    if (dw <= dh && fw * k < dw - (k - 1)) {
+      fail(`frame leaves ${dw - fw * k}px of padding left and right (${tag})`);
+    }
+  };
+
   const checkFit = (tag, g) => {
     console.log(`smoke: ${tag} canvas is ${g.bw}x${g.bh} pixels in a ${g.cw}x${g.ch} box`
                 + ` (layout ${g.lw}x${g.lh}, body ${g.bw2}x${g.bh2})`);
@@ -173,9 +201,12 @@ function fail(msg) { console.error('smoke FAIL: ' + msg); process.exit(1); }
 
   const deskCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const desk = await deskCtx.newPage();
+  const deskLogs = [];
+  desk.on('console', (m) => deskLogs.push(m.text()));
   await desk.goto(url, { waitUntil: 'load' });
   await desk.waitForTimeout(9000);
   checkFit('desktop', await measure(desk));
+  checkFrame('desktop', deskLogs);
   await deskCtx.close();
 
   // --- a phone-shaped viewport, including the URL bar ----------------------
@@ -188,6 +219,8 @@ function fail(msg) { console.error('smoke FAIL: ' + msg); process.exit(1); }
   const phoneCtx = await browser.newContext({
     viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
   const phone = await phoneCtx.newPage();
+  const phoneLogs = [];
+  phone.on('console', (m) => phoneLogs.push(m.text()));
   await phone.goto(url, { waitUntil: 'load' });
   await phone.waitForTimeout(9000);
   checkFit('phone', await measure(phone));
@@ -196,6 +229,7 @@ function fail(msg) { console.error('smoke FAIL: ' + msg); process.exit(1); }
     document.documentElement.style.height = Math.round(window.innerHeight * 0.85) + 'px';
   });
   checkFit('phone, URL bar showing', await measure(phone));
+  checkFrame('phone', phoneLogs);
   await phoneCtx.close();
 
   console.log('smoke OK');

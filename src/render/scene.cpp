@@ -40,7 +40,7 @@ float World::groundSlope(float screenX) {
 
 float World::ballX(float progress) {
     const float p = clampf(progress, 0.0f, 1.0f);
-    return BALL_X0 + (BALL_X1 - BALL_X0) * p;
+    return BALL_X0 + (ballX1() - BALL_X0) * p;
 }
 
 float World::ballY(float progress) {
@@ -104,7 +104,11 @@ void drawClouds(const Palette& pal, float rise) {
 
     const float drift = static_cast<float>(GetTime()) * 3.0f;
     constexpr float BAND_TOP = 18.0f;
-    constexpr float BAND_H   = 274.0f;
+    // The band runs from just under the top of the frame down to just above the
+    // hill, so a taller frame gets clouds across the whole extra sky rather than
+    // a stripe of it. At the design height this is the 274 the clouds were
+    // placed with.
+    const float BAND_H = static_cast<float>(VIRTUAL_H) - 86.0f;
 
     for (int i = 0; i < 7; ++i) {
         const float x = std::fmod(static_cast<float>(i * 53) + drift,
@@ -617,6 +621,22 @@ void draw(const Game& g, const Palette& pal, const SpriteBank& sprites) {
     drawSky(pal);
     drawSun(pal);
     drawClouds(pal, rise);
+
+    // Everything from here down is the world, laid out in the design frame. A
+    // display taller than 1:2 grows the frame instead of padding it, and the world
+    // is translated down by exactly that much. At the design size this translate
+    // is zero, so the picture is pixel for pixel what it always was; on a phone the
+    // extra height is more sky above a scene that has not moved or stretched. The
+    // sky and clouds stay above the push, because they belong to the frame.
+    // Everything from here down is the world, laid out in the design frame. A
+    // display taller than 1:2 grows the frame instead of padding it, and the world
+    // is translated down by exactly that much. At the design size this offset is
+    // zero, so the picture is pixel for pixel what it always was; on a phone the
+    // extra height is more sky above a scene that has not moved or stretched. The
+    // sky and clouds stay above the push, because they belong to the frame.
+    const Camera2D world{{ 0.0f, static_cast<float>(frameTop()) }, { 0.0f, 0.0f }, 0.0f, 1.0f };
+    BeginMode2D(world);
+
     drawParallax(pal, rise);
     drawHill(pal);
 
@@ -648,6 +668,8 @@ void draw(const Game& g, const Palette& pal, const SpriteBank& sprites) {
         speechBubble(line, static_cast<int>(bx),
                      static_cast<int>(by - World::BALL_R), pal, reveal);
     }
+
+    EndMode2D();
 }
 
 } // namespace cashyphus::scene

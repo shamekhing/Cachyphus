@@ -27,7 +27,7 @@ namespace {
 // Two full-width bars stacked at the very top. At 4px tall and segmented, they
 // are readable at phone size and leave the whole frame to the scene.
 constexpr int BAR_X  = 5;
-constexpr int BAR_W  = VIRTUAL_W - 2 * BAR_X;
+int barWidth() { return VIRTUAL_W - 2 * BAR_X; }
 constexpr int BAR_H  = 4;
 constexpr int CELLS  = 14;
 constexpr int CELLY0 = 3;
@@ -39,7 +39,7 @@ const Color kEmpty = Color{ 44, 42, 48, 215 };
 void bar(int y, float frac, Color fill) {
     frac = clampf(frac, 0.0f, 1.0f);
     const int lit = static_cast<int>(CELLS * frac + 0.5f);
-    const int cw  = (BAR_W - (CELLS - 1)) / CELLS;
+    const int cw  = (barWidth() - (CELLS - 1)) / CELLS;
     for (int i = 0; i < CELLS; ++i) {
         const int x = BAR_X + i * (cw + 1);
         DrawRectangle(x, y, cw, BAR_H, i < lit ? fill : kEmpty);
@@ -77,21 +77,24 @@ void drawTitle(const Palette& pal) {
     const Color dim  = toColor(pal.uiDim);
     const Color txt  = toColor(pal.uiText);
 
-    txt::drawCenter("CASHYPHUS", 58, txt::SIZE_MEDIUM, gold);
-    txt::drawCenter("One hill.", 94, txt::SIZE_SMALL, txt);
-    txt::drawCenter("One lifetime.", 106, txt::SIZE_SMALL, txt);
-    txt::drawCenter("One more push.", 118, txt::SIZE_SMALL, dim);
+    // The overlay is centred in the frame, so it follows the frame's extra height
+    // rather than sitting high on a tall phone screen.
+    const int top = frameTop();
+    txt::drawCenter("CASHYPHUS", 58 + top, txt::SIZE_MEDIUM, gold);
+    txt::drawCenter("One hill.", 94 + top, txt::SIZE_SMALL, txt);
+    txt::drawCenter("One lifetime.", 106 + top, txt::SIZE_SMALL, txt);
+    txt::drawCenter("One more push.", 118 + top, txt::SIZE_SMALL, dim);
 
     if (static_cast<int>(GetTime() * 2.0f) % 2 == 0) {
-        txt::drawCenter("PRESS SPACE", 148, txt::SIZE_SMALL, txt);
-        txt::drawCenter("OR TAP / CLICK", 160, txt::SIZE_SMALL, txt);
+        txt::drawCenter("PRESS SPACE", 148 + top, txt::SIZE_SMALL, txt);
+        txt::drawCenter("OR TAP / CLICK", 160 + top, txt::SIZE_SMALL, txt);
     }
 }
 
 void drawChoice(const Palette& pal) {
     const int w = 168, h = 78;
     const int x = (VIRTUAL_W - w) / 2;
-    const int y = 46;
+    const int y = 46 + frameTop();
     panel(x, y, w, h, pal);
 
     const Color txt = toColor(pal.uiText);
@@ -111,10 +114,11 @@ void drawChoice(const Palette& pal) {
 
 void drawWalkAwayText(const Game& g, const Palette& pal) {
     if (g.walkT() > 0.55f && g.walkT() < 0.96f) {
-        DrawRectangle(0, 146, VIRTUAL_W, 26, Color{ 12, 10, 16, 150 });
+        const int top = frameTop();
+        DrawRectangle(0, 146 + top, VIRTUAL_W, 26, Color{ 12, 10, 16, 150 });
         const Color ink = toColor(pal.uiText);
-        txt::drawCenter("You cannot buy back", 150, txt::SIZE_SMALL, ink);
-        txt::drawCenter("time you never spent.", 161, txt::SIZE_SMALL, ink);
+        txt::drawCenter("You cannot buy back", 150 + top, txt::SIZE_SMALL, ink);
+        txt::drawCenter("time you never spent.", 161 + top, txt::SIZE_SMALL, ink);
     }
 }
 
@@ -127,20 +131,21 @@ void drawCredits(const Game& g, const Palette& pal) {
     // line is 22 characters at the most. Anything longer is silently clipped by
     // the render target on BOTH sides -- which is how the ending screen used to
     // lose the first and last few letters of every sentence.
-    txt::drawCenter("You can leave.", 84, txt::SIZE_SMALL, txt);
-    txt::drawCenter("But the hill will", 96, txt::SIZE_SMALL, txt);
-    txt::drawCenter("always find someone", 108, txt::SIZE_SMALL, txt);
-    txt::drawCenter("willing to climb.", 120, txt::SIZE_SMALL, txt);
+    const int top = frameTop();
+    txt::drawCenter("You can leave.", 84 + top, txt::SIZE_SMALL, txt);
+    txt::drawCenter("But the hill will", 96 + top, txt::SIZE_SMALL, txt);
+    txt::drawCenter("always find someone", 108 + top, txt::SIZE_SMALL, txt);
+    txt::drawCenter("willing to climb.", 120 + top, txt::SIZE_SMALL, txt);
 
     char buf[64];
     std::snprintf(buf, sizeof(buf), "lives spent: %d", g.completedLives());
-    txt::drawCenter(buf, 156, txt::SIZE_SMALL, dim);
-    txt::drawCenter("times you kept", 170, txt::SIZE_SMALL, dim);
+    txt::drawCenter(buf, 156 + top, txt::SIZE_SMALL, dim);
+    txt::drawCenter("times you kept", 170 + top, txt::SIZE_SMALL, dim);
     std::snprintf(buf, sizeof(buf), "pushing: %d", g.timesContinued());
-    txt::drawCenter(buf, 182, txt::SIZE_SMALL, dim);
+    txt::drawCenter(buf, 182 + top, txt::SIZE_SMALL, dim);
 
     if (static_cast<int>(GetTime() * 2.0f) % 2 == 0) {
-        txt::drawCenter("PRESS SPACE", 212, txt::SIZE_SMALL, toColor(pal.ballBand));
+        txt::drawCenter("PRESS SPACE", 212 + top, txt::SIZE_SMALL, toColor(pal.ballBand));
     }
 }
 

@@ -95,9 +95,10 @@ python3 -m http.server -d build-web 8000   # then open cashyphus.html
 
 The web build emits `cashyphus.html`, `.js`, `.wasm`, and `.data`. The data file contains the runtime WAV and OGG assets. `tools/stage_site.py` gives all three binary files content-hashed names for publishing.
 
-The page is built to be played on a phone as it stands: the game letterboxes its
-portrait 1:2 frame inside the canvas, and the canvas is shown at its own pixel
-size -- scaled by one factor, capped at 1, never given a shape of its own.
+The page is built to be played on a phone as it stands: the game sizes its
+portrait frame to the canvas, so the game fills the screen, and the canvas is
+shown at its own pixel size -- scaled by one factor, capped at 1, never given a
+shape of its own.
 (raylib resizes the canvas element to the whole window on every resize, so a CSS
 box of a different shape lets the browser squash the game.) **tap is PUSH,
 press-and-hold is BRACE.** Both the layout and that touch bridge live in
@@ -269,9 +270,15 @@ Bracing restores stamina. But the money ball complains the moment you stop. The
 mechanics quietly teach you that the ball's advice is unreliable   which is the
 first step toward the ending where you simply walk away.
 
-**Rendering** draws everything into a 180x360 portrait render target with point
-filtering, then blits it to the window at an integer scale with letterboxing, so
-the pixel art stays crisp at any window size.
+**Rendering** draws everything into a portrait render target with point filtering
+and blits it to the window at a whole-number scale. The target is not fixed at
+180x360: `cfg::frameFor()` picks the largest integer scale the display can hold
+and grows the frame to the display at that scale, so a 2.16:1 phone gets a 195x422
+frame drawn at 2x which fills the screen edge to edge, instead of a letterboxed
+strip with 15% of the picture thrown away. The art is laid out in the 180x360
+design frame and translated down by the extra height, so a taller frame is more
+sky above an unchanged scene -- nothing is stretched, nothing is cropped, and a
+landscape monitor keeps the design width and gives up only the sides.
 
 **Audio** loads edited CC0 coin, money handling, paper, and nature recordings from `assets/audio`. The 100 BPM eight-bar score has age and incarnation variations; raylib streams OGG loops and caches short WAV effects in a three-voice pool each, so a player who mashes the push key overlaps coin tails rather than cutting them off. The main loop routes effects from accepted simulation events, crossfades tracks, and applies master, music, effects, dialogue, and ambience gains. M toggles mute and bracket keys adjust master volume. A missing or undecodable recording falls back to one of the nine procedural voices in `src/audio/voices.hpp` instead of to silence, and if the machine has no audio device at all the game still plays.
 

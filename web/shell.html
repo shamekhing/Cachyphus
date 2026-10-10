@@ -13,8 +13,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>CASHYPHUS</title>
   <style>
-    /* The game renders a 180x360 portrait frame and letterboxes it INSIDE the
-       canvas, so the page must never impose a shape of its own on the canvas.
+    /* The game fills the canvas with a portrait frame it sizes from the canvas
+       itself, so the page must never impose a shape of its own on the canvas.
        It used to: a portrait CSS box on a canvas whose backing store raylib
        resizes to the whole window on every resize (EmscriptenResizeCallback in
        rcore_web.c) means the browser stretches one into the other -- the game
@@ -133,9 +133,12 @@
       z-index: 5;
     }
     #sound {
-      position: fixed; top: max(8px, env(safe-area-inset-top)); right: 8px;
+      /* The game fills the screen edge to edge now, so this button has to clear
+         the status bars and the age numeral the HUD draws along the top: the
+         whole top band is 44px at the 2x the frame is drawn at. */
+      position: fixed; top: max(52px, env(safe-area-inset-top)); right: 8px;
       z-index: 6; background: #221d2b; color: #e7d59b; border: 1px solid #8b7b55;
-      font: 10px monospace; padding: 7px; cursor: pointer;
+      font: 10px monospace; padding: 6px; cursor: pointer; opacity: 0.9;
     }
     #hint .touch { display: none; }
     @media (hover: none) and (pointer: coarse) {
@@ -181,7 +184,7 @@
     // --- keep the display size equal to the canvas's own pixel size ----------
     // raylib's web backend resizes the canvas ELEMENT to window.innerWidth x
     // innerHeight on every window resize (EmscriptenResizeCallback), while the
-    // game draws a 180x360 portrait frame letterboxed inside it. If the CSS box
+    // game fills it with a portrait frame sized from it. If the CSS box
     // is anything other than the backing store, the browser stretches one into
     // the other: a portrait box made the game come out roughly a third of its
     // proper width and squashed, with clicks landing in the wrong place.
@@ -381,8 +384,8 @@
       activeTouch = null;
     }
 
-    // Bound to the document, not the canvas, so the letterboxed bars and the
-    // area around a phone's notch are still part of the control surface.
+    // Bound to the document, not the canvas, so a touch anywhere -- including the
+    // area around a phone's notch -- is still part of the control surface.
     document.addEventListener('touchstart', function (e) {
       if (panelVisible()) return;                // the start button owns this
       // Stops the browser inventing a mouse press from this touch, which would
@@ -407,8 +410,8 @@
     // Left-click (push) and a HELD right-click (brace) are the desktop controls.
     // Emscripten's GLFW attaches its mouse listeners to the canvas and relied on
     // Element.setCapture() to keep receiving a pressed button; setCapture() no
-    // longer exists in modern browsers, so a right-click released over a
-    // letterbox bar would never reach the engine -- and the game polls that
+    // longer exists in modern browsers, so a right-click released outside the
+    // canvas would never reach the engine -- and the game polls that
     // button every frame, so it would read as a brace that is stuck on for ever.
     // Re-dispatch the release to the canvas whenever it lands anywhere else.
     if (canvas && canvas.dispatchEvent && typeof MouseEvent === 'function') {

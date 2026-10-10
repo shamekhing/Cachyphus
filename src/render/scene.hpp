@@ -24,7 +24,11 @@ struct World {
     static constexpr float GROUND_CURVE = 1.15f;   // >1 = steepens to the right
 
     static constexpr float BALL_X0 = 26.0f;        // ball x at progress 0
-    static constexpr float BALL_X1 = 166.0f;       // ball x at progress 1
+    // Ball x at progress 1: 14px inside the right edge, so the ball finishes at
+    // the flag whatever width the display grew the frame to (14px inside 180 is
+    // the 166 this was drawn at).
+    static constexpr float BALL_X1_MARGIN = 14.0f;
+    static float ballX1() { return static_cast<float>(cfg::VIRTUAL_W) - BALL_X1_MARGIN; }
 
     static float groundY(float screenX);                  // ground height at screen x
     static float groundSlope(float screenX);              // d(groundY)/d(screenX) there

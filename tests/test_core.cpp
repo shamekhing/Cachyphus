@@ -944,6 +944,57 @@ static void test_audio_voices() {
     CHECK(std::fabs(v::tri(3.5f) + 1.0f) < 1e-6f);
 }
 
+// =============================================================================
+//  Layout: the frame fills the display
+// =============================================================================
+// The game draws a portrait 1:2 playfield. On a 2.16:1 phone a fixed frame
+// letterboxes, and on a 1170x2532 screen that threw away 15% of the picture -- the
+// frame is grown to the display instead. These are the numbers that decide it, so
+// they are checked here rather than eyeballed on whatever monitor is to hand.
+static void test_frame_fit() {
+    section("layout: the frame fills the display");
+
+    // Phones: the frame must fill the screen exactly, with no padding at all.
+    const struct { int w, h; } phones[] = {
+        { 1170, 2532 }, { 1080, 2400 }, { 720, 1560 }, { 1440, 3120 },
+    };
+    for (const auto& s : phones) {
+        const FrameFit f = frameFor(s.w, s.h);
+        CHECK(f.width * f.scale == s.w);
+        CHECK(f.height * f.scale == s.h);
+        CHECK(f.width >= DESIGN_W && f.height >= DESIGN_H);   // never smaller than the art
+        CHECK(f.height > f.width);                            // never landscape
+        CHECK(f.width <= DESIGN_W * 6 / 5);                   // never too wide for the layout
+    }
+
+    // Desktop monitors: a portrait playfield cannot fill a 16:9 screen, so the sides
+    // are what gets given up -- but the height is taken in full, which is exactly
+    // what the old integer-scale letterbox wasted.
+    const struct { int w, h; } desktops[] = {
+        { 1440, 900 }, { 1920, 1080 }, { 2560, 1440 },
+    };
+    for (const auto& s : desktops) {
+        const FrameFit f = frameFor(s.w, s.h);
+        CHECK(f.height * f.scale == s.h);
+        CHECK(f.width == DESIGN_W);
+        CHECK(f.width * f.scale <= s.w);
+        CHECK(f.height > f.width);
+    }
+
+    // A display that is already 1:2 gets the design frame untouched, which is what
+    // makes the whole change a no-op on the art it was drawn for: at that size the
+    // world is translated by nothing.
+    const FrameFit d = frameFor(DESIGN_W * 2, DESIGN_H * 2);
+    CHECK(d.scale == 2 && d.width == DESIGN_W && d.height == DESIGN_H);
+    CHECK(frameTop() == 0);
+
+    // Degenerate sizes must not produce a frame of zero, or a negative one.
+    const FrameFit one = frameFor(1, 1);
+    CHECK(one.scale >= 1 && one.width >= 1 && one.height >= 1);
+    const FrameFit none = frameFor(0, 0);
+    CHECK(none.scale >= 1 && none.width >= 1 && none.height >= 1);
+}
+
 int main() {
     std::printf("CASHYPHUS core tests\n====================\n");
     test_stages_and_aging();
@@ -968,6 +1019,7 @@ int main() {
     test_tutorial_retires();
     test_arrangement_decays();
     test_audio_voices();
+    test_frame_fit();
 
     std::printf("\n%d/%d checks passed\n", g_checks - g_fail, g_checks);
     return g_fail == 0 ? 0 : 1;

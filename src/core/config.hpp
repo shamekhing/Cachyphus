@@ -15,10 +15,67 @@ namespace cashyphus::cfg {
 // The brief recommends 320x180, but its own interface sketch draws the hill
 // rising to a summit at the TOP of the frame -- a vertical composition. That is
 // what this is: the same pixel budget, rotated, so the climb reads as climbing.
-// 180x360 is exactly 1:2, so 2x is 360x720 and modern phones letterbox by
-// only a few percent.
-constexpr int   VIRTUAL_W = 180;
-constexpr int   VIRTUAL_H = 360;
+//
+// 180x360 is the *design* size: the size the art was laid out against, and the
+// size every offset in the renderer is still written in. The frame the game
+// actually renders into is chosen from the display at startup (and again when it
+// is resized), because a fixed 1:2 target cannot fill a 2.16:1 phone -- it
+// letterboxes, and on a 1170x2532 screen that threw away 15% of the picture.
+//
+// frameFor() below picks the largest integer pixel scale the display can hold at
+// the design size and then grows the FRAME to the display at that scale, rather
+// than padding around a fixed one. Nothing is stretched (the scale is a whole
+// number, so the pixels stay square and crisp) and nothing is cropped (the frame
+// is never allowed to come out landscape, where a hill would have nowhere to
+// climb). The extra height is simply more sky above a scene whose geometry is
+// unchanged -- frameTop() is what everything in the world is translated by.
+constexpr int DESIGN_W = 180;
+constexpr int DESIGN_H = 360;
+
+// Set by frameFor() at startup and on resize; read by everything that draws.
+inline int VIRTUAL_W = DESIGN_W;
+inline int VIRTUAL_H = DESIGN_H;
+// The whole-number pixel scale the current frame is drawn at.
+inline int FRAME_SCALE = 1;
+
+struct FrameFit {
+    int scale  = 1;
+    int width  = DESIGN_W;
+    int height = DESIGN_H;
+};
+
+// The frame that fills as much of a screenW x screenH display as a portrait 1:2
+// playfield can, at a whole-number pixel scale, without cropping or stretching.
+inline FrameFit frameFor(int screenW, int screenH) {
+    FrameFit f;
+    if (screenW < 1 || screenH < 1) return f;
+
+    int k = std::min(screenW / DESIGN_W, screenH / DESIGN_H);
+    if (k < 1) k = 1;                       // a display smaller than the design
+    f.scale = k;
+
+    const int grownW = screenW / k;
+    const int grownH = screenH / k;
+    if (grownW > grownH) {
+        // Landscape display: keep the design width so the hill still climbs, and
+        // take the whole height. The sides are the only thing left over.
+        f.width  = DESIGN_W;
+        f.height = grownH > DESIGN_H ? grownH : DESIGN_H;
+        return f;
+    }
+    // Portrait display: the frame takes the whole screen. The width is capped a
+    // little over the design width because the ball's climb and the summit flag
+    // are laid out across it, and a frame half as wide again would leave the ball
+    // finishing in the middle of the hill.
+    const int maxW = DESIGN_W * 6 / 5;
+    f.width  = grownW < maxW ? grownW : maxW;
+    f.height = grownH;
+    return f;
+}
+
+// How much taller the frame is than the art was drawn for. Positive when the
+// display is taller than 1:2, which is every phone.
+inline int frameTop() { return VIRTUAL_H - DESIGN_H; }
 
 // --- Fixed simulation step ----------------------------------------------------
 constexpr float FIXED_DT  = 1.0f / 60.0f;
