@@ -129,6 +129,9 @@ void Game::update(const Input& in, float dt) {
                 totalPushes_    = 0;
                 timesContinued_ = 0;
                 choiceUnlocked_ = false;
+                pushedYet_      = false;
+                bracedYet_      = false;
+                tutorialDone_   = false;
                 walkLineIndex_  = 0;
                 startLife();
             }
@@ -140,6 +143,9 @@ void Game::update(const Input& in, float dt) {
             si.brace  = in.braceHeld;
             si.active = true;
             if (in.pushPressed) ++totalPushes_;
+            if (in.pushPressed) pushedYet_ = true;
+            if (in.braceHeld)   bracedYet_ = true;
+            tutorialDone_ = pushedYet_ && bracedYet_;
             sim_.step(si, dt);
             updateDialogue(in, dt);
             if (sim_.reachedSummit()) {

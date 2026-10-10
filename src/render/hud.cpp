@@ -1,5 +1,6 @@
 #include "render/hud.hpp"
 
+#include <cmath>
 #include <cstdio>
 
 #include "core/config.hpp"
@@ -132,6 +133,29 @@ void drawCredits(const Game& g, const Palette& pal) {
     }
 }
 
+// A one-time, wordless hint at the two controls, planted in the thumb zone
+// (bottom, a little right of centre) so it sits under the hand that has to act
+// on it. An inner dot pulses -- tap to push -- and an outer ring ripples
+// outward -- press and keep pressing to brace. The moment the player has done
+// both, Game::tutorialDone() latches and this never draws again.
+void drawTutorialRing(const Game& g, const Palette& pal) {
+    if (g.phase() != Phase::Climb || g.tutorialDone()) return;
+
+    const float t  = GetTime();
+    const int   cx = VIRTUAL_W / 2 + 18;
+    const int   cy = VIRTUAL_H - 46;
+
+    // Inner dot: tap. Pulses gently so it reads as a thing to touch.
+    const float dot = 2.0f + 1.6f * (0.5f + 0.5f * std::sin(t * 3.4f));
+    DrawCircle(cx, cy, dot, toColor(pal.uiText, 150));
+
+    // Outer ring: hold. Ripples outward and fades.
+    const float rip = std::fmod(t * 0.7f, 1.0f);
+    const float rr  = 9.0f + rip * 12.0f;
+    DrawCircleLines(cx, cy, rr,
+                    toColor(pal.uiWarn, static_cast<unsigned char>((1.0f - rip) * 200.0f)));
+}
+
 } // namespace
 
 // =============================================================================
@@ -175,6 +199,7 @@ void draw(const Game& g, const Palette& pal) {
         const SimState& s = g.sim().state();
         bar(CELLY0, s.stamina, s.stamina < 0.25f ? bad : good);
         bar(CELLY1, s.grip, s.slipping ? bad : (s.grip < 0.3f ? warn : good));
+        drawTutorialRing(g, pal);
     }
 
     if (g.phase() == Phase::Choice)   drawChoice(pal);

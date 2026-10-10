@@ -52,6 +52,7 @@ public:
     int     totalPushes() const { return totalPushes_; }
     int     timesContinued() const { return timesContinued_; }
     bool    choiceUnlocked() const { return choiceUnlocked_; }
+    bool    tutorialDone() const { return tutorialDone_; }
 
     const Sim& sim() const { return sim_; }
     Stage      stage() const { return sim_.stage(); }
@@ -84,6 +85,13 @@ private:
     int   totalPushes_   = 0;
     int   timesContinued_ = 0;
     bool  choiceUnlocked_ = false;
+
+    // The first-time control hint is retired the moment the player has both
+    // pushed and braced at least once, and only ever comes back if the game is
+    // restarted from the title.
+    bool  pushedYet_    = false;
+    bool  bracedYet_    = false;
+    bool  tutorialDone_ = false;
 
     Sim   sim_;
     Rng   rng_{ 0x00C0FFEEu };

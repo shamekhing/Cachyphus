@@ -816,6 +816,44 @@ static void test_arrangement_decays() {
     CHECK(beyond.detune == spent.detune);
 }
 
+// =============================================================================
+//  Game: the one-time control hint retires itself
+// =============================================================================
+static void test_tutorial_retires() {
+    Game g;
+    CHECK(!g.tutorialDone());          // nothing shown before the first life
+
+    // Leave the title with a push: the title frame dispatches to the title
+    // case, so this press starts the climb without counting as a push.
+    Input start;
+    start.anyPressed  = true;
+    start.pushPressed = true;
+    g.update(start, FIXED_DT);
+    CHECK(g.phase() == Phase::Climb);
+    CHECK(!g.tutorialDone());
+
+    // A push alone is not enough; the hint teaches two things.
+    Input push;
+    push.pushPressed = true;
+    g.update(push, FIXED_DT);
+    CHECK(!g.tutorialDone());
+
+    // Neither is a brace on its own.
+    Game h;
+    Input go;
+    go.anyPressed = true;              // leave the title WITHOUT pushing
+    h.update(go, FIXED_DT);
+    CHECK(h.phase() == Phase::Climb);
+    Input brace;
+    brace.braceHeld = true;
+    h.update(brace, FIXED_DT);
+    CHECK(!h.tutorialDone());
+
+    // One push and one brace and it is done for good.
+    g.update(brace, FIXED_DT);
+    CHECK(g.tutorialDone());
+}
+
 int main() {
     std::printf("CASHYPHUS core tests\n====================\n");
     test_stages_and_aging();
@@ -837,6 +875,7 @@ int main() {
     test_ball_rolls_while_running_back();
     test_game_walk_away();
     test_game_keep_pushing();
+    test_tutorial_retires();
     test_arrangement_decays();
 
     std::printf("\n%d/%d checks passed\n", g_checks - g_fail, g_checks);
