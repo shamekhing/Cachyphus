@@ -110,6 +110,33 @@ function fail(msg) { console.error('smoke FAIL: ' + msg); process.exit(1); }
 
   if (errors.length) fail('errors after interaction:\n  ' + errors.join('\n  '));
 
+  // --- the page must not stretch the canvas --------------------------------
+  // raylib resizes the canvas ELEMENT to the whole window on every resize, so a
+  // CSS box of a different shape makes the browser squash one into the other.
+  // On a phone-shaped viewport the two shapes are nearly the same and the bug is
+  // invisible -- which is how the game shipped crushed to a third of its width
+  // on a desktop monitor while every check above still passed. So: measure it on
+  // a desktop viewport, and require the display box to have the same shape as
+  // the pixels in it.
+  const deskCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const desk = await deskCtx.newPage();
+  await desk.goto(url, { waitUntil: 'load' });
+  await desk.waitForTimeout(9000);
+
+  const geom = await desk.evaluate(() => {
+    const c = document.getElementById('canvas');
+    const r = c.getBoundingClientRect();
+    return { bw: c.width, bh: c.height, cw: Math.round(r.width), ch: Math.round(r.height) };
+  });
+  console.log(`smoke: desktop canvas is ${geom.bw}x${geom.bh} pixels in a ${geom.cw}x${geom.ch} box`);
+  if (!geom.bw || !geom.bh || !geom.cw || !geom.ch) fail('canvas has no size');
+  const want = geom.bw / geom.bh;
+  const got  = geom.cw / geom.ch;
+  if (Math.abs(got - want) / want > 0.02) {
+    fail(`canvas is being stretched: ${geom.bw}x${geom.bh} shown in ${geom.cw}x${geom.ch}`);
+  }
+  await deskCtx.close();
+
   console.log('smoke OK');
   await browser.close();
   server.close();
