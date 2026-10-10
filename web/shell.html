@@ -46,12 +46,16 @@
     }
 
     /* Size comes from fitCanvas() below: the canvas is shown at its own pixel
-       size, scaled down by a single factor if the viewport is smaller. These
-       maxima are only a guard for the moment before the script first runs. */
+       size, scaled down by ONE factor if the viewport is smaller.
+
+       Deliberately no max-width/max-height here. Those are single-axis clamps,
+       and any single-axis clamp breaks an aspect ratio the moment it bites: on a
+       phone the URL bar changes the LAYOUT viewport height without touching the
+       canvas, so max-height threw away the height the script had just set and
+       squashed the game by ~18% until the bar came back. The script keeps the
+       box inside the layout box instead, which cannot distort anything. */
     canvas.emscripten {
       display: block;
-      max-width: 100%;
-      max-height: 100%;
       border: 0;
       background: #0b0a0e;
       image-rendering: pixelated;
@@ -175,16 +179,30 @@
     // the other: a portrait box made the game come out roughly a third of its
     // proper width and squashed, with clicks landing in the wrong place.
     //
-    // Scaling by ONE factor can never distort, and it is capped at 1 so the
-    // pixels are never blown up. Polled rather than bound to the resize event,
-    // because the handler order (raylib's resize vs this one) is not guaranteed.
-    var fitW = 0, fitH = 0;
+    // Two rules make that impossible:
+    //   * one scale factor, capped at 1, so the pixels are never stretched or
+    //     blown up;
+    //   * fit the LAYOUT box, not the visual one. On a phone the URL bar changes
+    //     the layout viewport height while the canvas keeps its pixel size, so
+    //     measuring against the larger of the two overflows -- and with a
+    //     single-axis clamp in the stylesheet, overflow is a squash.
+    //
+    // Polled rather than bound to the resize event, because neither the handler
+    // order against raylib's own resize nor the arrival of visualViewport
+    // changes is guaranteed.
+    var fitW = 0, fitH = 0, fitVW = 0, fitVH = 0;
     function fitCanvas() {
       if (!canvas || !canvas.width || !canvas.height) return;
       var w = canvas.width, h = canvas.height;
-      if (w === fitW && h === fitH) return;
-      fitW = w; fitH = h;
-      var s = Math.min(window.innerWidth / w, window.innerHeight / h);
+      // The body is the box the canvas actually has to live in (it is the flex
+      // container), so it gets the final say. A dimension that reports 0 is
+      // ignored rather than treated as zero.
+      var de = document.documentElement || {}, bd = document.body || {};
+      var availW = Math.min(window.innerWidth  || w, de.clientWidth  || w, bd.clientWidth  || w);
+      var availH = Math.min(window.innerHeight || h, de.clientHeight || h, bd.clientHeight || h);
+      if (w === fitW && h === fitH && availW === fitVW && availH === fitVH) return;
+      fitW = w; fitH = h; fitVW = availW; fitVH = availH;
+      var s = Math.min(availW / w, availH / h);
       if (!isFinite(s) || s <= 0) s = 1;
       canvas.style.width  = Math.round(w * s) + 'px';
       canvas.style.height = Math.round(h * s) + 'px';

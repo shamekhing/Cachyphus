@@ -64,7 +64,8 @@ global.document = {
   getElementById: (id) => els[id] || null,
   createElement: () => makeEl('div'),
   addEventListener: (t, f) => (docListeners[t] ||= []).push(f),
-  documentElement: { requestFullscreen: () => Promise.resolve() },
+  documentElement: { requestFullscreen: () => Promise.resolve(), clientWidth: 0, clientHeight: 0 },
+  body: { clientWidth: 0, clientHeight: 0 },
 };
 
 const sent = [];              // every key event the shell dispatches
@@ -194,6 +195,10 @@ function check(label, got, want) {
   // monitor. Measured here with the window the browser actually reported.
   els.canvas.width = 1920; els.canvas.height = 994;      // raylib's resize
   window.innerWidth = 1920; window.innerHeight = 994;
+  document.documentElement.clientWidth = 1920;
+  document.documentElement.clientHeight = 994;
+  document.body.clientWidth = 1920;
+  document.body.clientHeight = 994;
   runFrames();
   check('canvas box matches its pixel size',
         [els.canvas.style.width, els.canvas.style.height], ['1920px', '994px']);
@@ -201,9 +206,25 @@ function check(label, got, want) {
   // A viewport smaller than the canvas gets one uniform factor, never a squash.
   els.canvas.width = 540; els.canvas.height = 1080;
   window.innerWidth = 390; window.innerHeight = 844;
+  document.documentElement.clientWidth = 390;
+  document.documentElement.clientHeight = 844;
+  document.body.clientWidth = 390;
+  document.body.clientHeight = 844;
   runFrames();
   check('smaller viewport scales by one factor',
         [els.canvas.style.width, els.canvas.style.height], ['390px', '780px']);
+
+  // The phone case: the URL bar is showing, so the LAYOUT box is shorter than the
+  // canvas while the VISUAL viewport is still full height. Fitting must follow
+  // the layout box; measuring against the visual viewport overflowed it, and the
+  // stylesheet's one-axis clamps turned that overflow into an 18% squash.
+  // 540x1080 * min(390/540, 700/1080) = 540x1080 * 0.648 -> 350x700.
+  window.innerHeight = 844;                      // visual viewport: still tall
+  document.documentElement.clientHeight = 700;   // layout box: not...
+  document.body.clientHeight = 700;              // ...and the body agrees
+  runFrames();
+  check('URL bar shrinks the canvas instead of squashing it',
+        [els.canvas.style.width, els.canvas.style.height], ['350px', '700px']);
 
   console.log(process.exitCode ? '\ninput bridge: FAILED' : '\ninput bridge: all good');
 })();

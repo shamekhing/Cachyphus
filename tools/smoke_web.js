@@ -118,24 +118,61 @@ function fail(msg) { console.error('smoke FAIL: ' + msg); process.exit(1); }
   // on a desktop monitor while every check above still passed. So: measure it on
   // a desktop viewport, and require the display box to have the same shape as
   // the pixels in it.
+  const measure = (p) => p.evaluate(() => new Promise((res) => {
+    const c = document.getElementById('canvas');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const r = c.getBoundingClientRect();
+      res({ bw: c.width, bh: c.height,
+            cw: Math.round(r.width), ch: Math.round(r.height),
+            lw: document.documentElement.clientWidth,
+            lh: document.documentElement.clientHeight,
+            bw2: document.body.clientWidth,
+            bh2: document.body.clientHeight });
+    }));
+  }));
+
+  const checkFit = (tag, g) => {
+    console.log(`smoke: ${tag} canvas is ${g.bw}x${g.bh} pixels in a ${g.cw}x${g.ch} box`
+                + ` (layout ${g.lw}x${g.lh}, body ${g.bw2}x${g.bh2})`);
+    if (!g.bw || !g.bh || !g.cw || !g.ch) fail(`canvas has no size (${tag})`);
+    const want = g.bw / g.bh;
+    if (Math.abs(g.cw / g.ch - want) / want > 0.02) {
+      fail(`canvas is being stretched: ${g.bw}x${g.bh} shown in ${g.cw}x${g.ch} (${tag})`);
+    }
+    // A dimension of 0 means "unknown" (a stub, not a real layout), so skip it.
+    const overflows = (box, layout) => layout > 0 && box > layout;
+    if (overflows(g.cw, g.lw) || overflows(g.ch, g.lh) ||
+        overflows(g.cw, g.bw2) || overflows(g.ch, g.bh2)) {
+      fail(`canvas overflows its box: ${g.cw}x${g.ch} in ${g.lw}x${g.lh} (${tag})`);
+    }
+  };
+
   const deskCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const desk = await deskCtx.newPage();
   await desk.goto(url, { waitUntil: 'load' });
   await desk.waitForTimeout(9000);
-
-  const geom = await desk.evaluate(() => {
-    const c = document.getElementById('canvas');
-    const r = c.getBoundingClientRect();
-    return { bw: c.width, bh: c.height, cw: Math.round(r.width), ch: Math.round(r.height) };
-  });
-  console.log(`smoke: desktop canvas is ${geom.bw}x${geom.bh} pixels in a ${geom.cw}x${geom.ch} box`);
-  if (!geom.bw || !geom.bh || !geom.cw || !geom.ch) fail('canvas has no size');
-  const want = geom.bw / geom.bh;
-  const got  = geom.cw / geom.ch;
-  if (Math.abs(got - want) / want > 0.02) {
-    fail(`canvas is being stretched: ${geom.bw}x${geom.bh} shown in ${geom.cw}x${geom.ch}`);
-  }
+  checkFit('desktop', await measure(desk));
   await deskCtx.close();
+
+  // --- a phone-shaped viewport, including the URL bar ----------------------
+  // A phone is where the layout viewport moves on its own: showing the URL bar
+  // shortens the layout box while the canvas keeps its own pixel size. Sizing the
+  // canvas against the visual viewport overflowed that box, and a single-axis
+  // clamp in the stylesheet turned the overflow into an 18% squash that nothing
+  // corrected. Both halves are checked here, because this is the only place that
+  // runs a real browser, and it is the only place that can emulate a phone.
+  const phoneCtx = await browser.newContext({
+    viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+  const phone = await phoneCtx.newPage();
+  await phone.goto(url, { waitUntil: 'load' });
+  await phone.waitForTimeout(9000);
+  checkFit('phone', await measure(phone));
+
+  await phone.evaluate(() => {
+    document.documentElement.style.height = Math.round(window.innerHeight * 0.85) + 'px';
+  });
+  checkFit('phone, URL bar showing', await measure(phone));
+  await phoneCtx.close();
 
   console.log('smoke OK');
   await browser.close();
