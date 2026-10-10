@@ -1,192 +1,145 @@
 #include "audio/synth.hpp"
-
 #include <algorithm>
 #include <cmath>
-
-#include "audio/voices.hpp"
+#include <string>
 
 namespace cashyphus::audio {
-
 namespace {
-
-// The effects themselves live in audio/voices.hpp: raylib-free, so they can be
-// rendered and measured by the headless tests. This file only turns them into
-// raylib Sounds and mixes the music on top.
-using voices::Voice;
-
-Sound make(Voice id) {
-    const int n = static_cast<int>(voices::seconds(id) * voices::RATE);
+const char* effectNames[]={"push_01","push_02","push_03","push_04","push_strong","brace_start","brace_loop","brace_end","ball_roll_loop","ball_slip","stamina_low","grip_exhausted","aging","summit","death","ball_downhill","reincarnation","dialogue_tick","choice_select","walk_away"};
+const char* trackNames[]={"money_loop_base","money_loop_young","money_loop_adult","money_loop_old","money_loop_final","money_loop_endless","money_loop_mechanical","freedom"};
+std::string root(){
+#ifdef __EMSCRIPTEN__
+    return "/audio/";
+#else
+    return "assets/audio/";
+#endif
+}
+// Headroom for a synthesised stand-in: a touch under the recordings' 0.65 peak,
+// so a missing file never plays louder than the effect it stands in for.
+constexpr float kStandinPeak=0.62f;
+}
+voices::Voice Synth::standinFor(Effect e){
+    switch(e){
+        case Effect::Push1: case Effect::Push2: case Effect::Push3: case Effect::Push4:
+        case Effect::Strong:      return voices::Voice::Push;
+        case Effect::BraceStart: case Effect::BraceLoop: case Effect::BraceEnd:
+        case Effect::Slip:        return voices::Voice::Scrape;
+        case Effect::Roll: case Effect::Downhill: return voices::Voice::Roll;
+        case Effect::Stamina:     return voices::Voice::Breath;
+        case Effect::Grip: case Effect::Dialogue: return voices::Voice::Rattle;
+        case Effect::Aging: case Effect::Reincarnation: case Effect::Choice: return voices::Voice::Bell;
+        case Effect::Summit:      return voices::Voice::Jingle;
+        case Effect::Death:       return voices::Voice::Collapse;
+        case Effect::WalkAway:    return voices::Voice::Birds;
+        case Effect::Count:       break;
+    }
+    return voices::Voice::Push;
+}
+// Render one procedural voice into a raylib Sound. LoadSoundFromWave converts and
+// copies the samples into its own audio buffer, so the staging buffer goes away.
+void Synth::buildStandin(int index, Clip& c){
+    const int n=static_cast<int>(voices::seconds(c.standin)*voices::RATE);
+    if(n<=0) return;
+    float* data=static_cast<float*>(MemAlloc(sizeof(float)*static_cast<unsigned int>(n)));
+    if(data==nullptr) return;
+    float peak=0.0f;
+    for(int i=0;i<n;++i){data[i]=voices::sample(c.standin,i);peak=std::max(peak,std::fabs(data[i]));}
+    if(peak>0.0f){const float g=kStandinPeak/peak;for(int i=0;i<n;++i)data[i]*=g;}
     Wave w{};
-    w.frameCount = n;
-    w.sampleRate = voices::RATE;
-    w.sampleSize = 16;
-    w.channels   = 1;
-    short* data = static_cast<short*>(MemAlloc(static_cast<unsigned int>(n) * sizeof(short)));
-    for (int i = 0; i < n; ++i) {
-        // Soft clip, not hard: the mixer adds every voice together with no
-        // limiter of its own, so a peak that reaches full scale would otherwise
-        // be squared off into the crackle that reads as static.
-        const float v = std::tanh(voices::sample(id, i));
-        data[i] = static_cast<short>(v * 30000.0f);
-    }
-    w.data = data;
-    Sound s = LoadSoundFromWave(w);
-    UnloadWave(w);
-    return s;
+    w.frameCount=static_cast<unsigned int>(n);
+    w.sampleRate=voices::RATE;
+    w.sampleSize=32;
+    w.channels=1;
+    w.data=data;
+    c.sound[0]=LoadSoundFromWave(w);
+    MemFree(data);
+    if(!IsSoundValid(c.sound[0])){c.sound[0]=Sound{};return;}
+    c.loaded=true;c.voices=1;
+    for(int v=1;v<kVoices;++v){const Sound alias=LoadSoundAlias(c.sound[0]);if(!IsSoundValid(alias))break;c.sound[v]=alias;c.voices=v+1;}
+    TraceLog(LOG_WARNING,"CASHYPHUS: sfx/%s.wav is missing, using the synthesised voice",effectNames[index]);
 }
-
-// -----------------------------------------------------------------------------
-//  Looping music: a tiny step sequencer rendered by an audio-stream callback.
-// -----------------------------------------------------------------------------
-struct MusicState {
-    int    step = 0;
-    double counter = 0.0;      // samples into the current step
-    double stepSamples = 0.0;
-    float  gain = 0.30f;
-    bool   warm = false;       // false = climb theme, true = escape motif
-    bool   playing = false;
-};
-
-MusicState g_music;
-
-// The climb theme, and whether it is in the mix at all. It is silenced
-// outright rather than faded whenever the escape motif takes over: the brief
-// is emphatic that the sudden absence of the pushing music is the point.
-ClimbTheme g_climb;
-bool       g_climbOn = true;
-
-// Headroom for the baked track. It is normalised to 0.86, so staying below
-// unity leaves room for the effects on top of it.
-constexpr float kClimbLevel = 0.70f;
-
-// Escape motif, in semitones relative to A4. The climb theme used to be an
-// eight-step sequencer in this file as well; it is now a real composed track
-// (see assets/CREDITS.md), so only the ending is still synthesised here.
-const int kEscapeSteps[8] = { 3, 7, 10, 15, 10, 7, 5, 3 };
-
-void musicCallback(void* buffer, unsigned int frames) {
-    float* out = static_cast<float*>(buffer);
-    if (!g_music.playing) {
-        for (unsigned int i = 0; i < frames; ++i) out[i] = 0.0f;
-        return;
+void Synth::unloadClip(Clip& c){
+    if(!c.loaded)return;
+    if(c.streaming){StopMusicStream(c.stream);UnloadMusicStream(c.stream);}
+    else{
+        for(int v=1;v<c.voices;++v)UnloadSoundAlias(c.sound[v]);
+        StopSound(c.sound[0]);
+        UnloadSound(c.sound[0]);
     }
-    if (g_music.stepSamples <= 0.0) g_music.stepSamples = voices::RATE * 0.28;
-
-    for (unsigned int i = 0; i < frames; ++i) {
-        if (g_music.counter >= g_music.stepSamples) {
-            g_music.counter -= g_music.stepSamples;
-            g_music.step = (g_music.step + 1) % 8;
-        }
-        const float t   = static_cast<float>(g_music.counter / g_music.stepSamples); // 0..1
-        const float sec = static_cast<float>(g_music.counter / voices::RATE);        // seconds
-
-        float sample = 0.0f;
-        if (g_music.warm) {
-            // The escape motif: a plain, warm resolution, heard only once the
-            // player has actually walked away.
-            const float f  = voices::noteFreq(kEscapeSteps[g_music.step]);
-            const float eg = voices::env(t, 1.0f, 0.02f, 0.35f);
-            // Both notes share that envelope. The bass used to be unenveloped,
-            // which meant its phase jumped back to zero at every step boundary
-            // -- a click every 0.28s, on a loop.
-            sample += 0.55f * voices::tri(f * sec) * eg;
-            if (g_music.step % 4 == 0) {
-                sample += 0.50f * voices::sine(voices::noteFreq(kEscapeSteps[g_music.step] - 24) * sec) * eg;
+    c.loaded=false;c.voices=0;
+}
+void Synth::init(){
+    if(ready_) return;
+    // On the web the audio context is created suspended and only resumes inside a
+    // user gesture, so the first attempt can legitimately find no device. main
+    // keeps calling this until it succeeds, and nothing is allocated until it does.
+    if (!IsAudioDeviceReady()) return;
+    ready_=true;
+    for(int i=0;i<static_cast<int>(Effect::Count);++i){
+        auto& c=clips_[i];
+        const auto path=root()+"sfx/"+effectNames[i]+".wav";
+        if(FileExists(path.c_str())){
+            c.streaming=i==static_cast<int>(Effect::BraceLoop) || i==static_cast<int>(Effect::Roll) || i==static_cast<int>(Effect::Downhill);
+            if(c.streaming){c.stream=LoadMusicStream(path.c_str());c.loaded=IsMusicValid(c.stream);if(c.loaded)c.stream.looping=true;}
+            else{
+                c.sound[0]=LoadSound(path.c_str());
+                if(IsSoundValid(c.sound[0])){
+                    c.loaded=true;c.voices=1;
+                    for(int v=1;v<kVoices;++v){const Sound alias=LoadSoundAlias(c.sound[0]);if(!IsSoundValid(alias))break;c.sound[v]=alias;c.voices=v+1;}
+                }
             }
-        } else if (g_climbOn) {
-            // The baked climb theme, wearing down as incarnations pile up.
-            sample += g_climb.next() * kClimbLevel;
         }
-        sample *= g_music.gain;
-
-        out[i] = std::clamp(sample, -1.0f, 1.0f);
-        g_music.counter += 1.0;
+        if(!c.loaded){c.standin=standinFor(static_cast<Effect>(i));buildStandin(i,c);}
     }
-}
-
-} // namespace
-
-// =============================================================================
-//  Synth
-// =============================================================================
-void Synth::init() {
-    if (!IsAudioDeviceReady()) {
-        ready_ = false;
-        TraceLog(LOG_WARNING, "CASHYPHUS: no audio device, running silently");
-        return;
+    for(int i=0;i<static_cast<int>(Track::Count);++i){
+        auto path=root()+(i==static_cast<int>(Track::Freedom)?"ambience/":"music/")+trackNames[i]+".ogg";
+        if(FileExists(path.c_str())){songs_[i].music=LoadMusicStream(path.c_str());songs_[i].loaded=IsMusicValid(songs_[i].music);if(songs_[i].loaded)songs_[i].music.looping=true;}
     }
-    ready_ = true;
-
-    sPush_     = make(Voice::Push);
-    sScrape_   = make(Voice::Scrape);
-    sRattle_   = make(Voice::Rattle);
-    sBreath_   = make(Voice::Breath);
-    sJingle_   = make(Voice::Jingle);
-    sBell_     = make(Voice::Bell);
-    sCollapse_ = make(Voice::Collapse);
-    sRoll_     = make(Voice::Roll);
-    sBirds_    = make(Voice::Birds);
-
-    music_ = LoadAudioStream(voices::RATE, 32, 1);
-    SetAudioStreamCallback(music_, musicCallback);
-    g_music.playing = true;
-    PlayAudioStream(music_);
-    SetAudioStreamVolume(music_, 0.0f);
+    auto& m=songs_[static_cast<int>(current_)];if(m.loaded)PlayMusicStream(m.music);
 }
-
-void Synth::shutdown() {
-    if (!ready_) return;
-    musicStop();
-    UnloadSound(sPush_);
-    UnloadSound(sScrape_);
-    UnloadSound(sRattle_);
-    UnloadSound(sBreath_);
-    UnloadSound(sJingle_);
-    UnloadSound(sBell_);
-    UnloadSound(sCollapse_);
-    UnloadSound(sRoll_);
-    UnloadSound(sBirds_);
-    UnloadAudioStream(music_);
-    ready_ = false;
+void Synth::shutdown(){
+    if(!ready_)return;
+    for(auto& c:clips_)unloadClip(c);
+    for(auto& s:songs_)if(s.loaded){StopMusicStream(s.music);UnloadMusicStream(s.music);s.loaded=false;}
+    ready_=false;
 }
-
-void Synth::push()     { if (ready_) PlaySound(sPush_); }
-void Synth::scrape()   { if (ready_) PlaySound(sScrape_); }
-void Synth::rattle()   { if (ready_) PlaySound(sRattle_); }
-void Synth::breath()   { if (ready_) PlaySound(sBreath_); }
-void Synth::jingle()   { if (ready_) PlaySound(sJingle_); }
-void Synth::bell()     { if (ready_) PlaySound(sBell_); }
-void Synth::collapse() { if (ready_) PlaySound(sCollapse_); }
-void Synth::rollDown() { if (ready_) PlaySound(sRoll_); }
-void Synth::birds()    { if (ready_) PlaySound(sBirds_); }
-
-void Synth::musicStart() {
-    if (!ready_) return;
-    g_music.playing = true;
-    if (!IsAudioStreamPlaying(music_)) PlayAudioStream(music_);
+void Synth::setVolumes(float master,float music,float effects,float dialogue,float ambience){master_=std::clamp(master,0.f,1.f);music_=std::clamp(music,0.f,1.f);effects_=std::clamp(effects,0.f,1.f);dialogue_=std::clamp(dialogue,0.f,1.f);ambience_=std::clamp(ambience,0.f,1.f);}
+void Synth::play(Effect e,float pitch,float volume){
+    if(!ready_)return;
+    auto& c=clips_[static_cast<int>(e)];
+    if(!c.loaded||c.streaming||c.voices<=0)return;
+    // Take a voice that is already free, so a fast player overlaps coin tails
+    // instead of restarting one voice over and over. When every voice is busy the
+    // oldest is stolen, which keeps the number of simultaneous instances fixed
+    // however hard the player mashes the key.
+    int pick=c.next;
+    for(int v=0;v<c.voices;++v){const int idx=(c.next+v)%c.voices;if(!IsSoundPlaying(c.sound[idx])){pick=idx;break;}}
+    c.next=(pick+1)%c.voices;
+    SetSoundPitch(c.sound[pick],std::clamp(pitch,.55f,1.5f));
+    const float category=e==Effect::Dialogue?dialogue_:effects_;
+    SetSoundVolume(c.sound[pick],master_*category*std::clamp(volume,0.f,1.f));
+    PlaySound(c.sound[pick]);
 }
-
-void Synth::musicStop() {
-    g_music.playing = false;
-    if (ready_ && IsAudioStreamPlaying(music_)) StopAudioStream(music_);
+void Synth::loop(Effect e,float target,float dt){
+    if(!ready_)return;
+    auto& c=clips_[static_cast<int>(e)];if(!c.loaded||!c.streaming)return;
+    c.gain=std::clamp(c.gain+(target>c.gain?1.f:-1.f)*dt*3.f,0.f,1.f);
+    if(c.gain>0.01f){
+        if(!IsMusicStreamPlaying(c.stream))PlayMusicStream(c.stream);
+        SetMusicVolume(c.stream,master_*effects_*c.gain);
+    }else if(IsMusicStreamPlaying(c.stream))StopMusicStream(c.stream);
 }
-
-void Synth::musicSetMood(bool warm) {
-    // Handing over to the escape motif is the "sudden silence" the brief asks
-    // for, so the climb theme is switched out rather than faded down.
-    if (warm && !g_music.warm) g_climbOn = false;
-    if (!warm && g_music.warm) {
-        g_climbOn = true;
-        g_climb.reset();
-    }
-    g_music.warm = warm;
+void Synth::select(Track t){wanted_=t;}
+void Synth::update(float dt){
+    if(!ready_)return;
+    if(current_!=wanted_){
+        songGain_=std::max(0.f,songGain_-dt*2.f);
+        if(songGain_<=0){musicActual_=0;auto& old=songs_[static_cast<int>(current_)];if(old.loaded)StopMusicStream(old.music);current_=wanted_;auto& next=songs_[static_cast<int>(current_)];if(next.loaded)PlayMusicStream(next.music);}
+    }else songGain_=std::min(1.f,songGain_+dt*1.2f);
+    for(auto& c:clips_)if(c.loaded&&c.streaming&&IsMusicStreamPlaying(c.stream))UpdateMusicStream(c.stream);
+    auto& s=songs_[static_cast<int>(current_)];
+    float desired=master_*(current_==Track::Freedom?ambience_:music_)*songGain_;
+    musicActual_+=std::clamp(desired-musicActual_,-dt*0.9f,dt*0.9f);
+    if(s.loaded){UpdateMusicStream(s.music);SetMusicVolume(s.music,musicActual_);}
 }
-
-void Synth::musicSetClimb(const core::Arrangement& a) { g_climb.setArrangement(a); }
-
-void Synth::musicVolume(float v) {
-    if (!ready_) return;
-    SetAudioStreamVolume(music_, std::clamp(v, 0.0f, 1.0f));
 }
-
-} // namespace cashyphus::audio

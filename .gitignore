@@ -1,10 +1,10 @@
 # ===========================================================================
 #  CASHYPHUS
-#  Every sprite and every sound is still generated in code. The single
-#  committed asset is the pixel font in assets/fonts/, which is baked into a
-#  C++ table at authoring time (tools/gen_font.py) and so never has to ship
-#  next to the binary. Anything listed here is a build artefact or a local
-#  development by-product.
+#  Every sprite is still generated in code, and the pixel font in assets/fonts/
+#  is baked into a C++ table at authoring time (tools/gen_font.py). The audio is
+#  the one thing that ships as files: the edited CC0 recordings in assets/audio/
+#  are loaded at runtime, so that directory is committed. Anything listed here is
+#  a build artefact, a re-baking input, or a local development by-product.
 # ===========================================================================
 
 # --- Build trees -----------------------------------------------------------
@@ -78,3 +78,15 @@ desktop.ini
 # --- Python (the asset bakers in tools/ are the only Python here) -----------
 __pycache__/
 *.py[cod]
+
+# --- Audio re-baking inputs -------------------------------------------------
+# The recordings the effects and loops are cut from, kept on disk so
+# tools/build_audio.py can be re-run, but not committed: the game loads the
+# rendered files in assets/audio/{sfx,music,ambience}/ and SOURCES.md records
+# the author, URL and licence of every input, so they can always be fetched
+# again.
+/assets/audio/sources/
+
+# macOS resource forks, which a zip built on a Mac leaves beside every file
+# (ten of them arrived inside the coin_sounds archive).
+._*

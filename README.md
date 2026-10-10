@@ -11,8 +11,7 @@ ball of money up a hill. They age as they climb. At the summit they die. The bal
 rolls back down. Someone else begins. After three lives, the game finally offers
 you a choice: **keep pushing, or walk away.**
 
-Built with **C++17 + raylib**. Every sprite and every sound is generated in code,
-so the repository contains no binary assets at all.
+Built with **C++17 + raylib**. Sprites are generated in code; the soundtrack uses edited CC0 currency recordings.
 
 ---
 
@@ -24,11 +23,13 @@ so the repository contains no binary assets at all.
 | **Hold right-click**, **SHIFT** or **Down** | Brace: hold the ball still and recover stamina, spending grip |
 | **Tap** / **left-click** / **SPACE** on the choice screen | Keep pushing (the cycle continues) |
 | **Hold** / **right-click** / **SHIFT** on the choice screen | Walk away (the escape ending) |
+| **M** | Mute or unmute audio |
+| **[** / **]** | Lower or raise master volume |
 | **F** (web build) | Fullscreen |
 
-On a phone there is nothing to click: the touch bridge in `web/shell.html` is the
-whole control surface, and it is **tap = PUSH, press-and-hold = BRACE** and
-nothing else -- there is no swipe, no second finger and no on-screen pad. The
+On a phone the sound button mutes audio. Gameplay uses the touch bridge in
+`web/shell.html`: **tap = PUSH, press-and-hold = BRACE**. There is no swipe or
+on-screen pad. The
 same two verbs answer the ending, which is the one place a phone cannot copy a
 keyboard: **tap keeps pushing, hold walks away.**
 
@@ -83,7 +84,7 @@ Options:
 
 ### Web / WebAssembly
 
-Emscripten produces a self-contained page (the CMake build sets raylib `PLATFORM=Web` for you):
+Emscripten produces a page with a preloaded audio data package (the CMake build sets raylib `PLATFORM=Web` for you):
 
 ```bash
 emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
@@ -92,9 +93,7 @@ cmake --build build-web -j
 python3 -m http.server -d build-web 8000   # then open cashyphus.html
 ```
 
-Because there are no asset files there is nothing to preload, so the whole game is
-`cashyphus.html` + `cashyphus.js` + `cashyphus.wasm`, about 1.1 MB in total -- most
-of the wasm is the baked music table.
+The web build emits `cashyphus.html`, `.js`, `.wasm`, and `.data`. The data file contains the runtime WAV and OGG assets. `tools/stage_site.py` gives all three binary files content-hashed names for publishing.
 
 The page is built to be played on a phone as it stands: the game letterboxes its
 portrait 1:2 frame inside the canvas, and the canvas is shown at its own pixel
@@ -190,7 +189,7 @@ src/
     game_state.hpp/.cpp  the CLIMB -> death -> reincarnation loop
     dialogue.hpp/.cpp    the ball's lines, banded by life stage
     palette.hpp/.cpp     warm-youth -> cold-summit colour model
-    music.hpp/.cpp       how worn down the climb theme is, per incarnation
+    music.hpp/.cpp       legacy arrangement curve retained for headless tests
   render/     raylib drawing
     pixelart.hpp/.cpp    char-map + palette -> texture (and CPU images)
     sprites.hpp/.cpp     the character sprite sheets + hunch-on-aging
@@ -199,12 +198,10 @@ src/
     font.hpp/.cpp        the baked 8px pixel face, and text helpers
     font_data.hpp        generated glyph table (tools/gen_font.py)
   audio/
-    voices.hpp           the nine effects, as pure functions of the sample index
-    synth.hpp/.cpp       bakes them into Sounds + the escape motif
-    climb.hpp/.cpp       plays the baked climb theme, worn down per life
-    music_data.cpp       generated PCM table (tools/gen_music.py)
+    synth.hpp/.cpp       loads WAV effects and OGG music, pools voices, fades tracks
+    voices.hpp           the nine procedural voices, for when a recording is absent
   main.cpp      window, 180x360 portrait render target, input, fixed-timestep loop
-assets/         the committed source assets and their licences (CREDITS.md)
+assets/audio/   original CC0 recordings, edited effects, loops, and SOURCES.md
 tests/          headless test binary
 tools/          offline asset bakers and preview dumps
 web/            Emscripten HTML shell
@@ -276,13 +273,7 @@ first step toward the ending where you simply walk away.
 filtering, then blits it to the window at an integer scale with letterboxing, so
 the pixel art stays crisp at any window size.
 
-**Audio** has no files. `audio/voices.hpp` is raylib-free and defines every
-effect as a pure function of the sample index -- noise from an integer hash,
-box-filtered to band-limit it and to take the DC out -- so each voice can be
-rendered and measured by the headless tests. `audio/synth.cpp` bakes those into
-44.1 kHz sample buffers, soft-clips them for headroom, and drives the looping
-soundtrack through a raylib `AudioStream`. If the machine has no audio device the
-whole layer becomes a no-op and the game runs silently.
+**Audio** loads edited CC0 coin, money handling, paper, and nature recordings from `assets/audio`. The 100 BPM eight-bar score has age and incarnation variations; raylib streams OGG loops and caches short WAV effects in a three-voice pool each, so a player who mashes the push key overlaps coin tails rather than cutting them off. The main loop routes effects from accepted simulation events, crossfades tracks, and applies master, music, effects, dialogue, and ambience gains. M toggles mute and bracket keys adjust master volume. A missing or undecodable recording falls back to one of the nine procedural voices in `src/audio/voices.hpp` instead of to silence, and if the machine has no audio device at all the game still plays.
 
 ---
 
@@ -311,17 +302,16 @@ toolchain installed:
 ./build/debug/cashyphus_decode track.ogg track.wav
 ```
 
-**Asset bakers**   regenerate the two committed asset tables. Neither is needed
-for an ordinary build -- the generated files are committed, which keeps the
-build free of any Python dependency:
+**Asset bakers** regenerate the font table and the committed audio assets, and the
+last one checks them. None is needed for an ordinary build:
 
 ```bash
 python3 tools/gen_font.py                # assets/fonts/*.bdf  -> font_data.hpp
-python3 tools/gen_music.py track.wav     # a loop             -> music_data.cpp
+python3 tools/build_audio.py            # retained recordings -> WAV and OGG files
+python3 tools/verify_audio.py           # measure every committed effect and loop
 ```
 
-Where those assets come from, and under what licences, is in
-**[assets/CREDITS.md](assets/CREDITS.md)**.
+Sources and licenses are in **[assets/audio/SOURCES.md](assets/audio/SOURCES.md)** and **[assets/CREDITS.md](assets/CREDITS.md)**.
 
 **Input-bridge test**   checks the page's tap-vs-hold translation and the mouse
 release safety net without needing a browser: it loads the built page's inline

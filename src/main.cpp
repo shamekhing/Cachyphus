@@ -61,84 +61,89 @@ Palette framePalette(const Game& g) {
     return climbPalette(g.ballProgress());
 }
 
-// --- music levels per phase --------------------------------------------------
-float musicLevel(const Game& g) {
-    switch (g.phase()) {
-        case Phase::Title:     return 0.30f;
-        case Phase::Climb:     return 0.45f;
-        case Phase::Collapse:
-        case Phase::Celebrate:
-        case Phase::Silence:
-        case Phase::RollDown:  return 0.0f;      // the summit is silent
-        case Phase::WalkIn:    return 0.25f;
-        case Phase::Choice:    return 0.30f;
-        case Phase::WalkAway:  return 0.45f;
-        case Phase::Credits:   return 0.40f;
-    }
-    return 0.0f;
-}
-
 // --- a little state the audio layer needs between frames ---------------------
 struct AudioCues {
     Phase prev = Phase::Title;
-    float scrapeTimer = 0.0f;
-    float breathTimer = 0.0f;
-    float rattleTimer = 0.0f;
+    Stage stage = Stage::Youth;
+    bool bracing = false, low = false, slipping = false, backwards = false, gripGone = false, twist = false;
+    int pushes = 0, reveal = 0;
+    const char* line = nullptr;
+    float master = 1.0f;
+    bool muted = false;
 };
 
-void driveAudio(audio::Synth& synth, const Game& g, AudioCues& cues, const Input& in,
-                float dt) {
-    // One-shots on phase transitions.
-    if (g.phase() != cues.prev) {
-        switch (g.phase()) {
-            case Phase::Collapse:  synth.collapse(); break;
-            case Phase::Celebrate:
-                if (g.completedLives() < 20) synth.jingle();
-                break;
-            case Phase::RollDown:  synth.rollDown(); break;
-            case Phase::WalkIn:    synth.bell();     break;
-            case Phase::WalkAway:  synth.birds();    break;
-            default: break;
-        }
-        cues.prev = g.phase();
-    }
-
+void driveAudio(audio::Synth& synth, const Game& g, AudioCues& c, const Input&, float dt) {
+    using E = audio::Synth::Effect;
+    using T = audio::Synth::Track;
+    // A second attempt matters on the web: the browser hands out the audio
+    // context suspended and only lets it run from inside the player's first tap,
+    // so the device can quite legitimately be missing when main() starts. init()
+    // is cheap and idempotent, so keep asking until it succeeds -- otherwise the
+    // page would stay silent for the whole session with no way back.
+    if (!synth.ready()) synth.init();
     if (!synth.ready()) return;
-
-    // Pushing thump.
-    if (g.phase() == Phase::Climb && in.pushPressed) synth.push();
-
-    // Footstep scrape while planting your feet.
-    if (g.phase() == Phase::Climb && in.braceHeld) {
-        cues.scrapeTimer -= dt;
-        if (cues.scrapeTimer <= 0.0f) { synth.scrape(); cues.scrapeTimer = 0.42f; }
-    } else {
-        cues.scrapeTimer = 0.0f;
+    const Phase p = g.phase();
+    const SimState& st = g.sim().state();
+    const float music = (p == Phase::Collapse || p == Phase::Celebrate || p == Phase::Silence || p == Phase::RollDown) ? 0.0f : 0.35f;
+    synth.setVolumes(c.muted ? 0.0f : c.master, music, 0.65f, 0.45f, 0.35f);
+    if (p != c.prev) {
+        if (p == Phase::Collapse) synth.play(E::Summit);
+        if (p == Phase::Celebrate) synth.play(E::Death);
+        if (p == Phase::WalkIn) synth.play(E::Reincarnation);
+        if (p == Phase::Choice) synth.play(E::Choice);
+        if (c.prev == Phase::Choice && p != Phase::Choice) synth.play(E::Choice);
+        if (p == Phase::WalkAway) { synth.play(E::WalkAway); c.twist = false; }
+        if (c.prev == Phase::Choice && p == Phase::Climb) synth.play(E::Reincarnation);
+        c.prev = p;
     }
-
-    // Coins rattling while the ball is actually rolling.
-    if (g.phase() == Phase::Climb && std::fabs(g.sim().state().vel) > 0.004f) {
-        cues.rattleTimer -= dt;
-        if (cues.rattleTimer <= 0.0f) { synth.rattle(); cues.rattleTimer = 0.30f; }
-    } else if (g.phase() == Phase::RollDown) {
-        cues.rattleTimer -= dt;
-        if (cues.rattleTimer <= 0.0f) { synth.rattle(); cues.rattleTimer = 0.18f; }
+    if (p == Phase::Climb) {
+        if (st.pushes > c.pushes) {
+            const int i = (st.pushes - 1) % 4;
+            const float agePitch = 1.0f - 0.08f * static_cast<int>(g.stage());
+            synth.play(st.stamina > 0.87f && st.pushes % 4 == 1 ? E::Strong : static_cast<E>(i), agePitch * (0.97f + 0.02f * (st.pushes % 4)), 0.85f);
+        }
+        const bool brace = st.grip > 0.0f && !st.slipping && st.stamina < 0.999f && g.character() == CharState::Bracing;
+        if (brace && !c.bracing) synth.play(E::BraceStart);
+        if (!brace && c.bracing) synth.play(E::BraceEnd);
+        c.bracing = brace;
+        synth.loop(E::BraceLoop, brace ? 0.24f : 0.0f, dt);
+        synth.loop(E::Roll, std::min(0.55f, std::fabs(st.vel) * 5.0f), dt);
+        const bool backward = st.vel < -0.025f;
+        if ((st.slipping && !c.slipping) || (backward && !c.backwards)) synth.play(E::Slip);
+        if (st.stamina < 0.17f && !c.low) synth.play(E::Stamina);
+        if (st.grip <= 0.0f && !c.gripGone) synth.play(E::Grip);
+        if (g.stage() != c.stage) synth.play(E::Aging);
+        c.low = st.stamina < 0.17f; c.slipping = st.slipping; c.backwards = backward; c.gripGone = st.grip <= 0.0f;
+        c.stage = g.stage(); c.pushes = st.pushes;
     } else {
-        cues.rattleTimer = 0.0f;
+        c.bracing = false; c.low = false; c.slipping = false; c.backwards = false; c.gripGone = false;
+        c.pushes = 0; c.stage = Stage::Youth;
+        synth.loop(E::BraceLoop, 0, dt); synth.loop(E::Roll, 0, dt);
     }
-
-    // Heavy breathing when the character is spent.
-    if (g.phase() == Phase::Climb && g.sim().state().strain > 0.45f) {
-        cues.breathTimer -= dt;
-        if (cues.breathTimer <= 0.0f) { synth.breath(); cues.breathTimer = 1.1f; }
-    } else {
-        cues.breathTimer = 0.0f;
+    if (p == Phase::RollDown) synth.loop(E::Downhill, 0.4f, dt);
+    else synth.loop(E::Downhill, 0, dt);
+    // Dialogue is revealed at 34 characters/s in scene.cpp. Limit ticks to
+    // every third visible character and only while the line is still appearing.
+    if (g.currentLine() != c.line) { c.line = g.currentLine(); c.reveal = 0; }
+    if (c.line && (p == Phase::Climb || p == Phase::Choice)) {
+        int shown = std::min(static_cast<int>(std::strlen(c.line)), static_cast<int>(g.lineAge() * 34.0f) + 1);
+        if (shown > c.reveal && shown % 3 == 0 && c.line[shown-1] != ' ') synth.play(E::Dialogue, 0.95f + 0.05f*(shown%3), 0.5f);
+        c.reveal = shown;
     }
-
-    // Music mood, how worn down the climb theme has become, and level.
-    synth.musicSetMood(g.phase() == Phase::WalkAway || g.phase() == Phase::Credits);
-    synth.musicSetClimb(core::arrangementFor(g.completedLives()));
-    synth.musicVolume(musicLevel(g));
+    T t = T::Young;
+    if (p == Phase::WalkAway && g.walkT() < 0.85f) t = T::Freedom;
+    else if (p == Phase::WalkAway) t = T::Base;
+    else if (p == Phase::Credits || p == Phase::Title || p == Phase::WalkIn || p == Phase::Choice) t = T::Base;
+    else if (g.completedLives() >= 12) t = T::Mechanical;
+    else if (g.completedLives() >= 5) t = T::Endless;
+    else if (g.stage() == Stage::Adult) t = T::Adult;
+    else if (g.stage() == Stage::Old) t = T::Old;
+    else if (g.stage() == Stage::Final) t = T::Final;
+    if (p == Phase::WalkAway && g.walkT() >= 0.85f && !c.twist) {
+        synth.play(E::Reincarnation); synth.play(E::Push1, 1.0f, 0.5f); c.twist = true;
+    }
+    synth.select(t);
+    synth.update(dt);
 }
 
 // --- optional capture mode (used to eyeball the game without playing it) -----
@@ -264,6 +269,11 @@ void frameStep() {
         a.accum += frame;
     }
 
+    if (!a.opts.capture) {
+        if (IsKeyPressed(KEY_M)) a.cues.muted = !a.cues.muted;
+        if (IsKeyPressed(KEY_LEFT_BRACKET)) a.cues.master = std::max(0.0f, a.cues.master - 0.1f);
+        if (IsKeyPressed(KEY_RIGHT_BRACKET)) a.cues.master = std::min(1.0f, a.cues.master + 0.1f);
+    }
     const Input realIn = a.opts.capture ? Input{} : readInput();
     bool firstStep = true;
     while (a.accum >= FIXED_DT) {
@@ -360,7 +370,6 @@ int main(int argc, char** argv) {
 
     InitAudioDevice();
     a.synth.init();
-    a.synth.musicStart();
 
     a.sprites.load();
 

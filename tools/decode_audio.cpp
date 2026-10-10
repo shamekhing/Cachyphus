@@ -5,7 +5,7 @@
 //  raylib already carries decoders for WAV, OGG, MP3, FLAC and QOA, so this
 //  turns an asset we have picked from a licence point of view into something
 //  that can be measured offline (and listened to) with no extra toolchain.
-//  Used by tools/gen_music.py's authoring loop; never shipped.
+//  Used by tools/build_audio.py and tools/verify_audio.py; never shipped.
 //
 //      cashyphus_decode <input> <output.wav>
 // =============================================================================

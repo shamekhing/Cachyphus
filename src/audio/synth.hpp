@@ -1,53 +1,55 @@
 #pragma once
-
-#include "audio/climb.hpp"
-#include "core/music.hpp"
+#include <array>
+#include "audio/voices.hpp"
 #include "raylib.h"
 
 namespace cashyphus::audio {
-
-// Every sound in the game is synthesised at runtime -- there are no audio
-// files. If the machine has no audio device the whole class becomes a no-op so
-// the game still runs silently.
 class Synth {
 public:
+    enum class Effect { Push1,Push2,Push3,Push4,Strong,BraceStart,BraceLoop,BraceEnd,Roll,Slip,Stamina,Grip,Aging,Summit,Death,Downhill,Reincarnation,Dialogue,Choice,WalkAway,Count };
+    enum class Track { Base,Young,Adult,Old,Final,Endless,Mechanical,Freedom,Count };
     void init();
     void shutdown();
-
     bool ready() const { return ready_; }
-
-    // One-shot effects.
-    void push();       // heavy thump
-    void scrape();     // bracing footstep
-    void rattle();     // coins / the ball rolling
-    void breath();     // heavy breathing, used when stamina is low
-    void jingle();     // summit celebration
-    void bell();       // reincarnation
-    void collapse();   // the character dies
-    void rollDown();   // the ball heading home
-    void birds();      // only heard once you walk away
-
-    // Looping music. The climb theme is a real CC0 track baked into the binary
-    // and worn down per incarnation; `warm` switches instead to the gentle
-    // escape motif heard only after walking away.
-    void musicStart();
-    void musicStop();
-    void musicSetMood(bool warm);
-    void musicSetClimb(const core::Arrangement& a);
-    void musicVolume(float v);   // 0..1
-
+    void update(float dt);
+    void play(Effect e, float pitch=1.0f, float volume=1.0f);
+    void loop(Effect e, float target, float dt);
+    void select(Track t);
+    void setVolumes(float master,float music,float effects,float dialogue,float ambience);
 private:
-    bool ready_ = false;
-    Sound sPush_{};
-    Sound sScrape_{};
-    Sound sRattle_{};
-    Sound sBreath_{};
-    Sound sJingle_{};
-    Sound sBell_{};
-    Sound sCollapse_{};
-    Sound sRoll_{};
-    Sound sBirds_{};
-    AudioStream music_{};
-};
+    // A short effect is a small pool of voices over one decoded sample. A player
+    // can land two pushes inside one coin tail, and a single Sound would cut the
+    // first clink off mid-ring; aliases share the sample data, so three voices
+    // cost three bookkeeping slots rather than three copies of the audio. Loops
+    // stay single-stream: they are retriggered by gain, never by PlaySound.
+    static constexpr int kVoices = 3;
+    struct Clip {
+        Sound sound[kVoices]{};
+        int   voices  = 0;      // pool slots actually built, 0 when nothing loaded
+        int   next    = 0;      // round-robin cursor
+        Music stream{};
+        bool  loaded  = false;
+        bool  streaming = false;
+        float gain = 0;
+        voices::Voice standin = voices::Voice::Count;   // used when the WAV is absent
+    };
+    struct Song { Music music{}; bool loaded=false; };
 
-} // namespace cashyphus::audio
+    // The game still runs with no assets at all: an effect whose recording is
+    // missing or fails to decode falls back to one of the nine procedural voices
+    // in voices.hpp, synthesised once on demand. That header is pure functions
+    // with no raylib in it, so the test suite measures this path directly.
+    static voices::Voice standinFor(Effect e);
+    void buildStandin(int index, Clip& c);
+    void unloadClip(Clip& c);
+
+    std::array<Clip,static_cast<int>(Effect::Count)> clips_{};
+    std::array<Song,static_cast<int>(Track::Count)> songs_{};
+    Track current_=Track::Base;
+    Track wanted_=Track::Base;
+    bool ready_=false;
+    float master_=1,music_=0.35f,effects_=0.65f,dialogue_=0.45f,ambience_=0.35f;
+    float songGain_=0;
+    float musicActual_=0;
+};
+}

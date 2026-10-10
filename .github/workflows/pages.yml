@@ -5,9 +5,8 @@
 #  -> Source: "GitHub Actions". After that every push to main republishes the
 #  game at https://<owner>.github.io/<repo>/
 #
-#  Because the game generates all of its sprites and audio in code, there are
-#  no asset files to preload: the whole site is just three files plus a
-#  .nojekyll marker.
+#  Runtime WAV and OGG files are preloaded into the web data package. The
+#  staging step hashes JS, wasm, and data for cache-safe deployment.
 # ===========================================================================
 name: Pages
 
@@ -94,7 +93,7 @@ jobs:
       - name: Build
         run: cmake --build build-web -j"$(nproc)"
 
-      # Only the three runtime files belong on the site -- build-web also holds
+      # Only the runtime files belong on the site -- build-web also holds
       # the whole raylib checkout and hundreds of MB of object files.
       - name: Stage the site
         run: |

@@ -86,8 +86,6 @@ if(CASHYPHUS_BUILD_GAME)
         src/render/sprites.cpp
         src/render/font.cpp
         src/audio/synth.cpp
-        src/audio/climb.cpp
-        src/audio/music_data.cpp
     )
     target_link_libraries(cashyphus PRIVATE cashyphus_core ${CASHYPHUS_RAYLIB})
     target_compile_options(cashyphus PRIVATE -Wall -Wextra)
@@ -100,7 +98,13 @@ if(CASHYPHUS_BUILD_GAME)
         # that call is why the build needs -sASYNCIFY.
         set_target_properties(cashyphus PROPERTIES
             SUFFIX ".html"
-            LINK_FLAGS "-sUSE_GLFW=3 -sASSERTIONS=1 -sALLOW_MEMORY_GROWTH=1 -sASYNCIFY -sMINIFY_HTML=0 --shell-file ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html")
+            LINK_FLAGS "--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/sfx@/audio/sfx --preload-file ${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/music@/audio/music --preload-file ${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/ambience@/audio/ambience -sUSE_GLFW=3 -sASSERTIONS=1 -sALLOW_MEMORY_GROWTH=1 -sASYNCIFY -sMINIFY_HTML=0 --shell-file ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html")
+        # Emscripten's preload package must be rebuilt when rendered audio changes.
+        file(GLOB_RECURSE CASHYPHUS_AUDIO_FILES CONFIGURE_DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/sfx/*"
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/music/*"
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio/ambience/*")
+        set_property(TARGET cashyphus APPEND PROPERTY LINK_DEPENDS ${CASHYPHUS_AUDIO_FILES})
         # Relink when the HTML shell changes.
         set_property(TARGET cashyphus APPEND PROPERTY
             LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html")

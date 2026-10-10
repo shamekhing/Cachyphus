@@ -10,14 +10,15 @@ support", which is exactly what a player reported seeing. There was no way to
 defend against it while both files shared a fixed name, because any cache may
 legitimately hold either one.
 
-Renaming both to their own content hash and rewriting the references means a JS
+Renaming the JS, wasm, and preloaded audio data to their own content hashes and rewriting the references means a JS
 can only ever be fetched alongside the wasm it was built against: a stale copy
 misses the link and is simply not used.
 
-Both references are pinned from `web/shell.html`:
+The JS and wasm references are pinned from `web/shell.html`; the audio package reference is inside the generated JS:
 
   <script ... src="cashyphus.js">   -> cashyphus.<hash>.js
   var CASHYPHUS_WASM = '...'        -> cashyphus.<hash>.wasm
+  cashyphus.data in JS                -> cashyphus.<hash>.data
 
 Usage:
     python3 tools/stage_site.py <build-dir> <out-dir>
@@ -49,6 +50,11 @@ def main() -> int:
     html = (build / "cashyphus.html").read_text(encoding="utf-8")
     js = (build / "cashyphus.js").read_bytes()
     wasm = (build / "cashyphus.wasm").read_bytes()
+    data = (build / "cashyphus.data").read_bytes()
+    data_name = f"cashyphus.{short_hash(data)}.data"
+    if b"cashyphus.data" not in js:
+        raise SystemExit("stage_site: no data package reference in loader")
+    js = js.replace(b"cashyphus.data", data_name.encode())
 
     js_name = f"cashyphus.{short_hash(js)}.js"
     wasm_name = f"cashyphus.{short_hash(wasm)}.wasm"
@@ -65,12 +71,13 @@ def main() -> int:
     (out / "index.html").write_text(html, encoding="utf-8")
     (out / js_name).write_bytes(js)
     (out / wasm_name).write_bytes(wasm)
+    (out / data_name).write_bytes(data)
     # Skip Jekyll so nothing gets rewritten or dropped.
     (out / ".nojekyll").write_text("", encoding="utf-8")
 
     # Drop any previously staged copies, so a rebuild cannot leave orphans that
     # would just be more things for a browser to cache.
-    wanted = {"index.html", ".nojekyll", js_name, wasm_name}
+    wanted = {"index.html", ".nojekyll", js_name, wasm_name, data_name}
     for stale in out.iterdir():
         if stale.name not in wanted:
             stale.unlink()
@@ -79,6 +86,7 @@ def main() -> int:
     print(f"  index.html   {len(html):>9} bytes")
     print(f"  {js_name:<13} {len(js):>9} bytes")
     print(f"  {wasm_name:<13} {len(wasm):>9} bytes")
+    print(f"  {data_name:<13} {len(data):>9} bytes")
     return 0
 
 

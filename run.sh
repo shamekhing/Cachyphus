@@ -11,9 +11,8 @@
 #                         if the page has errors or the canvas never draws
 #   ./run.sh --port 9000  serve --web on another port
 #
-# Nothing needs installing beyond a compiler, CMake and OpenGL headers: raylib
-# is fetched on the first build, and every sprite and sound is generated in
-# code, so there is no asset directory to find at runtime. --web additionally
+# The game loads its audio from assets/audio at runtime; run this script from
+# any directory to keep the asset path rooted at the repository. --web additionally
 # needs the Emscripten SDK (emcmake) on PATH.
 #
 set -euo pipefail

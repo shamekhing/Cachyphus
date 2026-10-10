@@ -43,7 +43,8 @@ function makeEl(id) {
       remove: (c) => classes.delete(c),
       contains: (c) => classes.has(c),
     },
-    addEventListener() {},
+    listeners: {},
+    addEventListener(type, listener) { this.listeners[type] = listener; },
     appendChild() {},
     remove() {},
     querySelector: () => null,
@@ -60,11 +61,16 @@ const els = {
 els.status.textContent = 'loading engine...';
 
 const docListeners = {};
+let fullscreenRequests = 0;
 global.document = {
   getElementById: (id) => els[id] || null,
   createElement: () => makeEl('div'),
   addEventListener: (t, f) => (docListeners[t] ||= []).push(f),
-  documentElement: { requestFullscreen: () => Promise.resolve(), clientWidth: 0, clientHeight: 0 },
+  documentElement: {
+    requestFullscreen: () => { ++fullscreenRequests; return Promise.resolve(); },
+    clientWidth: 0,
+    clientHeight: 0,
+  },
   body: { clientWidth: 0, clientHeight: 0 },
 };
 
@@ -225,6 +231,14 @@ function check(label, got, want) {
   runFrames();
   check('URL bar shrinks the canvas instead of squashing it',
         [els.canvas.style.width, els.canvas.style.height], ['350px', '700px']);
+
+  Module.onRuntimeInitialized();
+  sent.length = 0;
+  els.start.listeners.click();
+  check('fullscreen is requested during the start tap', fullscreenRequests, 1);
+  check('title press waits for fullscreen resize', sent, []);
+  await wait(450);
+  check('title press follows fullscreen resize', sent, ['keydown:Space']);
 
   console.log(process.exitCode ? '\ninput bridge: FAILED' : '\ninput bridge: all good');
 })();

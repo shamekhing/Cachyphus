@@ -132,6 +132,11 @@
       pointer-events: none;
       z-index: 5;
     }
+    #sound {
+      position: fixed; top: max(8px, env(safe-area-inset-top)); right: 8px;
+      z-index: 6; background: #221d2b; color: #e7d59b; border: 1px solid #8b7b55;
+      font: 10px monospace; padding: 7px; cursor: pointer;
+    }
     #hint .touch { display: none; }
     @media (hover: none) and (pointer: coarse) {
       #hint .touch { display: inline; }
@@ -144,9 +149,11 @@
 
   <div id="hint">
     <span class="kb">LEFT CLICK push &middot; HOLD RIGHT CLICK brace<br>
-      SPACE / SHIFT also work &middot; F fullscreen</span>
+      SPACE / SHIFT also work &middot; M mute &middot; [ / ] volume &middot; F fullscreen</span>
     <span class="touch">tap = PUSH or STAY &middot; hold = BRACE or LEAVE</span>
   </div>
+
+  <button id="sound" type="button" aria-label="Mute audio">SOUND ON</button>
 
   <div id="panel">
     <h1>CASHYPHUS</h1>
@@ -314,6 +321,7 @@
     // listener lives.
     var KEY_SPACE = { code: 'Space',     keyCode: 32 };
     var KEY_SHIFT = { code: 'ShiftLeft', keyCode: 16 };
+    var KEY_M = { code: 'KeyM', keyCode: 77 };
 
     function sendKey(type, k) {
       var ev = new KeyboardEvent(type, { code: k.code, key: k.code, bubbles: true, cancelable: true });
@@ -322,6 +330,21 @@
         Object.defineProperty(ev, 'which',   { get: function () { return k.keyCode; } });
       } catch (err) { /* older browsers may ignore this; the code field may do */ }
       window.dispatchEvent(ev);
+    }
+
+    var soundBtn = document.getElementById('sound');
+    if (soundBtn) {
+      ['touchstart', 'touchend', 'touchcancel'].forEach(function (name) {
+        soundBtn.addEventListener(name, function (e) { e.stopPropagation(); }, { passive: true });
+      });
+      soundBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        sendKey('keydown', KEY_M);
+        setTimeout(function () { sendKey('keyup', KEY_M); }, TAP_MS);
+        var off = soundBtn.textContent === 'SOUND ON';
+        soundBtn.textContent = off ? 'SOUND OFF' : 'SOUND ON';
+        soundBtn.setAttribute('aria-label', off ? 'Unmute audio' : 'Mute audio');
+      });
     }
 
     // Beyond this a touch is a brace rather than a push.
@@ -436,12 +459,14 @@
         // WebAudio run, so unlock it here -- the gesture listeners above are
         // only the fallback.
         unlockAudio();
-        // The title screen is waiting for a press, so give it one. This is sent
-        // before asking for fullscreen: the resize that goes with it has been
-        // observed to swallow a key sent alongside it.
-        sendKey('keydown', KEY_SPACE);
-        setTimeout(function () { sendKey('keyup', KEY_SPACE); }, TAP_MS);
-        setTimeout(goFullscreen, 400);
+        // Fullscreen must be requested during the tap or browsers may reject
+        // it after transient user activation expires. Its resize can swallow a
+        // key sent alongside it, so start the title screen after it settles.
+        goFullscreen();
+        setTimeout(function () {
+          sendKey('keydown', KEY_SPACE);
+          setTimeout(function () { sendKey('keyup', KEY_SPACE); }, TAP_MS);
+        }, 400);
       });
     }
 

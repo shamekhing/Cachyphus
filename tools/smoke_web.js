@@ -98,6 +98,30 @@ function fail(msg) { console.error('smoke FAIL: ' + msg); process.exit(1); }
   await page.waitForTimeout(1500);
   if (await page.isVisible('#panel')) fail('start button did not dismiss the panel');
   console.log('smoke: start panel dismissed');
+  // The preloaded WAV/OGG package and user-gesture audio context must be live.
+  const audio = await page.evaluate(() => ({
+    packageLoaded: typeof FS !== 'undefined' &&
+      FS.analyzePath('/audio/music/money_loop_young.ogg').exists &&
+      FS.analyzePath('/audio/sfx/push_01.wav').exists &&
+      FS.analyzePath('/audio/ambience/freedom.ogg').exists,
+    devices: (window.miniaudio && window.miniaudio.devices || []).length,
+    running: (window.miniaudio && window.miniaudio.devices || []).some(
+      (d) => d.webaudio && d.webaudio.state === 'running'),
+  }));
+  if (!audio.packageLoaded || !audio.devices || !audio.running) {
+    fail('audio package or Web Audio context unavailable: ' + JSON.stringify(audio));
+  }
+  console.log('smoke: audio package loaded and Web Audio running');
+  const sound = page.locator('#sound');
+  if (!(await sound.count())) fail('web mute control missing');
+  const sb = await sound.boundingBox();
+  await page.touchscreen.tap(sb.x + sb.width / 2, sb.y + sb.height / 2);
+  await page.waitForTimeout(120);
+  if ((await sound.textContent()).trim() !== 'SOUND OFF') fail('web mute control did not toggle off');
+  await page.touchscreen.tap(sb.x + sb.width / 2, sb.y + sb.height / 2);
+  await page.waitForTimeout(120);
+  if ((await sound.textContent()).trim() !== 'SOUND ON') fail('web mute control did not toggle on');
+  console.log('smoke: touch mute control toggled');
 
   // Liveness: the frame must change over time. A running game always does -- the
   // clouds drift and the title blinks -- while a blank or hung canvas returns
