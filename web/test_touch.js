@@ -12,6 +12,10 @@
 //   mouse  a button released OUTSIDE the canvas is re-dispatched to it. The
 //          engine polls the button every frame, so a release it never sees
 //          leaves the brace on for ever.
+//   layout the canvas's CSS box is locked to its own pixel size. raylib resizes
+//          the canvas ELEMENT to the whole window on every resize, and a CSS box
+//          of a different shape lets the browser squash one into the other: the
+//          game came out a crushed sliver on a desktop monitor.
 //
 // Run it against a *built* page:
 //
@@ -85,6 +89,21 @@ els.canvas.dispatchEvent = function (ev) { els.canvas.dispatched.push(ev); retur
 global.MouseEvent = class {
   constructor(type, init) { this.type = type; Object.assign(this, init); }
 };
+
+// The layout guard needs a canvas that reports a pixel size and has a style, a
+// viewport to fit inside, and requestAnimationFrame to re-check on.
+els.canvas.style  = {};
+els.canvas.width  = 0;
+els.canvas.height = 0;
+global.window.innerWidth  = 0;
+global.window.innerHeight = 0;
+let rafQueue = [];
+global.requestAnimationFrame = function (fn) { rafQueue.push(fn); return rafQueue.length; };
+function runFrames() {
+  const q = rafQueue;
+  rafQueue = [];
+  for (const fn of q) fn();
+}
 
 vm.runInThisContext(blocks[0], { filename: 'shell-inline.js' });
 
@@ -167,6 +186,24 @@ function check(label, got, want) {
   fireDom('contextmenu', ctx);
   check('context menu left alone on the panel', prevented, 0);
   els.panel.classList.add('hidden');
+
+  // --- layout: the canvas box must never be given a shape of its own --------
+  // raylib's web backend sets the canvas pixel size to the whole window on every
+  // resize. If the CSS box is a different shape the browser stretches one into
+  // the other, which is what turned the game into a crushed sliver on a desktop
+  // monitor. Measured here with the window the browser actually reported.
+  els.canvas.width = 1920; els.canvas.height = 994;      // raylib's resize
+  window.innerWidth = 1920; window.innerHeight = 994;
+  runFrames();
+  check('canvas box matches its pixel size',
+        [els.canvas.style.width, els.canvas.style.height], ['1920px', '994px']);
+
+  // A viewport smaller than the canvas gets one uniform factor, never a squash.
+  els.canvas.width = 540; els.canvas.height = 1080;
+  window.innerWidth = 390; window.innerHeight = 844;
+  runFrames();
+  check('smaller viewport scales by one factor',
+        [els.canvas.style.width, els.canvas.style.height], ['390px', '780px']);
 
   console.log(process.exitCode ? '\ninput bridge: FAILED' : '\ninput bridge: all good');
 })();

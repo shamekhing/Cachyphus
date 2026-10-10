@@ -13,20 +13,16 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>CASHYPHUS</title>
   <style>
-    /* The game renders a 180x360 portrait image and lets CSS scale it, so all
-       the layout work is a letterbox. The rest of this exists to stop a mobile
-       browser fighting the game: no scroll, no pinch zoom, no pull-to-refresh,
-       no long-press callout, no tap highlight. */
-    :root {
-      --vw: 100vw;
-      --vh: 100vh;
-    }
-    @supports (height: 100dvh) {
-      /* Dynamic viewport height, so the canvas is not sized to a viewport the
-         browser is about to hide behind a toolbar. */
-      :root { --vh: 100dvh; }
-    }
-
+    /* The game renders a 180x360 portrait frame and letterboxes it INSIDE the
+       canvas, so the page must never impose a shape of its own on the canvas.
+       It used to: a portrait CSS box on a canvas whose backing store raylib
+       resizes to the whole window on every resize (EmscriptenResizeCallback in
+       rcore_web.c) means the browser stretches one into the other -- the game
+       came out about a third of its proper width and squashed, and clicks
+       landed in the wrong place. The box is now locked to the backing store by
+       script below, with one scale factor, which cannot distort anything. The
+       rest of this exists to stop a mobile browser fighting the game: no
+       scroll, no pinch zoom, no pull-to-refresh, no long-press callout. */
     html, body {
       margin: 0;
       padding: 0;
@@ -49,12 +45,13 @@
       justify-content: center;
     }
 
-    /* Portrait letterbox: the game renders 180x360 (1:2), so fit it against
-       whichever of width or height runs out first. */
+    /* Size comes from fitCanvas() below: the canvas is shown at its own pixel
+       size, scaled down by a single factor if the viewport is smaller. These
+       maxima are only a guard for the moment before the script first runs. */
     canvas.emscripten {
       display: block;
-      width: min(var(--vw), calc(var(--vh) / 2));
-      height: min(var(--vh), calc(var(--vw) * 2));
+      max-width: 100%;
+      max-height: 100%;
       border: 0;
       background: #0b0a0e;
       image-rendering: pixelated;
@@ -169,6 +166,34 @@
 
     function hidePanel() { if (panel) panel.classList.add('hidden'); }
     function panelVisible() { return panel && !panel.classList.contains('hidden'); }
+
+    // --- keep the display size equal to the canvas's own pixel size ----------
+    // raylib's web backend resizes the canvas ELEMENT to window.innerWidth x
+    // innerHeight on every window resize (EmscriptenResizeCallback), while the
+    // game draws a 180x360 portrait frame letterboxed inside it. If the CSS box
+    // is anything other than the backing store, the browser stretches one into
+    // the other: a portrait box made the game come out roughly a third of its
+    // proper width and squashed, with clicks landing in the wrong place.
+    //
+    // Scaling by ONE factor can never distort, and it is capped at 1 so the
+    // pixels are never blown up. Polled rather than bound to the resize event,
+    // because the handler order (raylib's resize vs this one) is not guaranteed.
+    var fitW = 0, fitH = 0;
+    function fitCanvas() {
+      if (!canvas || !canvas.width || !canvas.height) return;
+      var w = canvas.width, h = canvas.height;
+      if (w === fitW && h === fitH) return;
+      fitW = w; fitH = h;
+      var s = Math.min(window.innerWidth / w, window.innerHeight / h);
+      if (!isFinite(s) || s <= 0) s = 1;
+      canvas.style.width  = Math.round(w * s) + 'px';
+      canvas.style.height = Math.round(h * s) + 'px';
+    }
+    function keepCanvasFitted() {
+      fitCanvas();
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(keepCanvasFitted);
+    }
+    keepCanvasFitted();
 
     function showError(msg) {
       if (!panel) return;

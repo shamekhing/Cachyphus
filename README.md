@@ -96,9 +96,12 @@ Because there are no asset files there is nothing to preload, so the whole game 
 `cashyphus.html` + `cashyphus.js` + `cashyphus.wasm`, about 1.1 MB in total -- most
 of the wasm is the baked music table.
 
-The page is built to be played on a phone as it stands: the canvas letterboxes
-itself to the portrait 1:2 game against the viewport, and **tap is PUSH,
-press-and-hold is BRACE**. Both the layout and that touch bridge live in
+The page is built to be played on a phone as it stands: the game letterboxes its
+portrait 1:2 frame inside the canvas, and the canvas is shown at its own pixel
+size -- scaled by one factor, capped at 1, never given a shape of its own.
+(raylib resizes the canvas element to the whole window on every resize, so a CSS
+box of a different shape lets the browser squash the game.) **tap is PUSH,
+press-and-hold is BRACE.** Both the layout and that touch bridge live in
 `web/shell.html`, which is also where any load failure is reported -- a wasm
 build that fails silently is a blank page, which is the worst possible failure
 mode, so nothing is allowed to fail
