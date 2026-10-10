@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- The game itself is a 1:2 portrait composition that fills whatever frame it
+       is handed, so this page only has to hand it a frame as large as the
+       screen, notches included. -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0a0e">
+  <meta name="description" content="One hill. One lifetime. One more push. A pixel-art climb about a coin that will not stay dead.">
+  <title>CASHYPHUS</title>
+
+  <script>
+    // Set before the first paint. This page is either opened on its own -- a
+    // double click, or a link somebody was sent -- or embedded as the playable
+    // file of a host that brings its own chrome, itch.io's player for one. In
+    // the first case the strip below is the way out and the way to notice that
+    // the network is down; inside a host it would be a stray bar across the top
+    // of somebody else's page, so it goes before it can flash.
+    if (window.self !== window.top) document.documentElement.className = 'framed';
+  </script>
+
+  <style>
+    :root {
+      --night: #0b0a0e;
+      --panel: #221d2b;
+      --edge:  #8b7b55;
+      --paper: #e7d59b;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; background: var(--night); }
+    body { display: flex; flex-direction: column; overflow: hidden; }
+
+    #strip {
+      flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px 10px;
+      align-items: center; justify-content: center; padding: 7px 10px;
+      font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--paper); background: var(--panel);
+      border-bottom: 1px solid var(--edge);
+    }
+    #strip b { letter-spacing: 0.09em; }
+    #strip .where { opacity: 0.75; }
+    #strip a, #strip button {
+      font: inherit; color: var(--paper); background: #2c2637; text-decoration: none;
+      border: 1px solid var(--edge); padding: 4px 9px; cursor: pointer;
+    }
+    html.framed #strip { display: none; }
+
+    #stage { flex: 1 1 auto; position: relative; min-height: 0; }
+    #game { display: block; width: 100%; height: 100%; border: 0; background: var(--night); }
+
+    /* Shown only if the game does not answer. It sits over the bottom of the
+       frame rather than replacing it, so a slow load is never interrupted by a
+       panel shouting that it failed. */
+    #note {
+      position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+      width: max-content; max-width: 92%; margin: 0; padding: 8px 12px;
+      font: 11px/1.6 ui-monospace, monospace; color: var(--paper);
+      background: rgba(34, 29, 43, 0.95); border: 1px solid var(--edge);
+      opacity: 0; transition: opacity 0.4s ease; pointer-events: none;
+    }
+    #note.show { opacity: 1; pointer-events: auto; }
+    #note a { color: var(--paper); }
+  </style>
+</head>
+<body>
+  <div id="strip">
+    <b>CASHYPHUS</b>
+    <span class="where">played from shamekhing.github.io/Cachyphus</span>
+    <button id="full" type="button">FULLSCREEN</button>
+    <a href="https://shamekhing.github.io/Cachyphus/" target="_blank" rel="noopener">OPEN ON ITS OWN</a>
+  </div>
+
+  <div id="stage">
+    <!-- The game asks for fullscreen by itself -- F, or the tap-to-play button
+         on a phone -- and a frame one level down is refused that unless the
+         frames above it pass it along; hence allowfullscreen and allow=. -->
+    <iframe id="game" title="CASHYPHUS"
+            src="https://shamekhing.github.io/Cachyphus/"
+            allow="autoplay; fullscreen"
+            allowfullscreen
+            webkitallowfullscreen
+            mozallowfullscreen></iframe>
+
+    <p id="note">The game has not loaded. It is hosted, not in this file, so it needs
+      the network &mdash; <a href="https://shamekhing.github.io/Cachyphus/" target="_blank"
+      rel="noopener">open it on its own</a> and see what the browser says.</p>
+  </div>
+
+  <script>
+    (function () {
+      var game = document.getElementById('game');
+      var note = document.getElementById('note');
+      var framed = window.self !== window.top;
+      var loaded = false;
+
+      game.addEventListener('load', function () {
+        loaded = true;
+        note.className = '';
+      });
+
+      // Inside a host player stay quiet: a host that cannot reach the game has
+      // its own way of saying so, and two messages would be worse than one.
+      if (!framed) {
+        setTimeout(function () { if (!loaded) note.className = 'show'; }, 6000);
+      }
+
+      document.getElementById('full').addEventListener('click', function () {
+        // The frame, not this document: the game wants the pixels, and asking
+        // here would leave the game sitting in the top-left of a black screen.
+        var el = game;
+        var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+        if (fn) {
+          try {
+            var p = fn.call(el);
+            if (p && p.catch) p.catch(function () {});
+          } catch (err) { /* the browser will not have it; the link still works */ }
+        }
+        // Clicking the button took focus out of the game, so give it back:
+        // SPACE and SHIFT stop reaching it otherwise.
+        try { game.focus(); } catch (err) {}
+      });
+    })();
+  </script>
+</body>
+</html>

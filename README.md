@@ -158,6 +158,40 @@ You can also trigger it by hand from the *Actions* tab (`workflow_dispatch`).
 runs the core tests in both Debug and Release on every push and pull request,
 plus a full native build to catch compile errors in the raylib layer.
 
+### Submitting to itch.io
+
+itch.io's browser player accepts one shape: a zip whose top level *is* the game,
+an `index.html` and whatever it loads. `tools/pack_itch.py` writes that, and
+re-opens the finished zip to check it -- no `index.html` at the top level, a
+reference to a file that is not in the zip, a nested folder or a dotfile, and it
+refuses to hand it to you rather than let a player find out.
+
+There are two honest ways to fill it, and the game being published already makes
+the first one worth having:
+
+```bash
+python3 tools/pack_itch.py                 # ~9 KiB: plays the published copy
+python3 tools/pack_itch.py --self-contained build-web   # ~2.8 MiB: carries it
+```
+
+The small one is the page in `web/itch/index.html`, which plays
+`https://shamekhing.github.io/Cachyphus/`. It needs the network, and in exchange
+it cannot fall out of step with the game -- there is no copy of it in the zip.
+The same file doubles as a plain page to open on its own (or send to somebody):
+the strip across the top, with the fullscreen button and the way out, hides
+itself when the page is embedded, because inside a host's chrome it would only
+be a bar across the top of the game.
+
+The self-contained one has no dependency on Pages at all and is what to upload
+if the page's own hosting ever goes away. `./run.sh --itch` builds it and packs
+it in one step. Both carry `CREDITS.md`, the audio sources and the font's OFL
+text, because an itch upload is a distribution and the OFL asks for its licence
+to travel with the font -- here that font is baked into the wasm.
+
+Upload the zip on the game's page under *Edit game → Uploads → "This file will
+be played in the browser"*. The cover image, the screenshots and the page copy
+are separate fields, and separate work.
+
 ---
 
 ## Tests

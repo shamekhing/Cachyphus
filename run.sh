@@ -10,6 +10,7 @@
 #   ./run.sh --smoke      build it, then load it in headless Chromium and fail
 #                         if the page has errors or the canvas never draws
 #   ./run.sh --port 9000  serve --web on another port
+#   ./run.sh --itch       build it, then pack a zip to put on itch.io
 #
 # The game loads its audio from assets/audio at runtime; run this script from
 # any directory to keep the asset path rooted at the repository. --web additionally
@@ -25,7 +26,7 @@ PORT=8000
 FRESH=0
 JOBS="$(nproc 2>/dev/null || echo 4)"
 
-usage() { sed -n '3,17p' "$0" | sed 's/^#\{1,\} \{0,1\}//'; }
+usage() { sed -n '3,18p' "$0" | sed 's/^#\{1,\} \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -35,6 +36,7 @@ while [ $# -gt 0 ]; do
     --tests)   CMD=tests ;;
     --web)     CMD=web ;;
     --smoke)   CMD=smoke ;;
+    --itch)    CMD=itch ;;
     --port)    PORT="${2:?--port needs a number}"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "run.sh: unknown option '$1'" >&2; usage >&2; exit 2 ;;
@@ -48,7 +50,7 @@ if [ "$FRESH" = 1 ]; then
 fi
 
 # --- build -------------------------------------------------------------------
-if [ "$CMD" = web ] || [ "$CMD" = smoke ]; then
+if [ "$CMD" = web ] || [ "$CMD" = smoke ] || [ "$CMD" = itch ]; then
   command -v emcmake >/dev/null 2>&1 || {
     echo "run.sh: emcmake not found. Install the Emscripten SDK and source its env." >&2
     exit 1
@@ -86,6 +88,13 @@ case "$CMD" in
     python3 tools/stage_site.py build-web build-web/site
     echo "==> running the browser smoke test"
     node tools/smoke_web.js build-web/site
+    ;;
+
+  itch)
+    # The self-contained shape: the game itself, nothing fetched from anywhere
+    # else. For the couple of kilobytes that play the published copy instead,
+    # run pack_itch.py without --self-contained.
+    python3 tools/pack_itch.py --self-contained build-web
     ;;
 
   run)
