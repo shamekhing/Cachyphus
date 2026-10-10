@@ -142,7 +142,8 @@
   <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
 
   <div id="hint">
-    <span class="kb">SPACE push &middot; SHIFT brace &middot; F fullscreen</span>
+    <span class="kb">LEFT CLICK push &middot; HOLD RIGHT CLICK brace<br>
+      SPACE / SHIFT also work &middot; F fullscreen</span>
     <span class="touch">tap = PUSH &middot; hold = BRACE</span>
   </div>
 
@@ -336,6 +337,35 @@
       endTouch();
     }, { passive: false });
 
+    // --- mouse -> the engine, with the release guaranteed -------------------
+    // Left-click (push) and a HELD right-click (brace) are the desktop controls.
+    // Emscripten's GLFW attaches its mouse listeners to the canvas and relied on
+    // Element.setCapture() to keep receiving a pressed button; setCapture() no
+    // longer exists in modern browsers, so a right-click released over a
+    // letterbox bar would never reach the engine -- and the game polls that
+    // button every frame, so it would read as a brace that is stuck on for ever.
+    // Re-dispatch the release to the canvas whenever it lands anywhere else.
+    if (canvas && canvas.dispatchEvent && typeof MouseEvent === 'function') {
+      document.addEventListener('mouseup', function (e) {
+        if (panelVisible() || e.target === canvas) return;   // the canvas got it
+        canvas.dispatchEvent(new MouseEvent('mouseup', {
+          bubbles: false,            // non-bubbling, so it cannot re-enter here
+          cancelable: true,
+          button: e.button,
+          buttons: e.buttons,
+          clientX: e.clientX,
+          clientY: e.clientY,
+        }));
+      }, true);
+    }
+
+    // Right-click is a control now, so the browser's context menu must not
+    // interrupt it mid-brace. The loading / failure panel keeps its own.
+    document.addEventListener('contextmenu', function (e) {
+      if (panelVisible()) return;
+      e.preventDefault();
+    });
+
     function goFullscreen() {
       var el = document.documentElement;
       var fn = el.requestFullscreen || el.webkitRequestFullscreen;
@@ -344,9 +374,12 @@
         var p = fn.call(el);
         if (p && p.catch) p.catch(function () {});
       } catch (err) { /* iOS Safari refuses; not worth surfacing */ }
+      // The game is a 1:2 PORTRAIT composition (see VIRTUAL_W/VIRTUAL_H), so
+      // fullscreen has to stay portrait: asking for landscape rotates the canvas
+      // away from the layout it was built for.
       if (screen.orientation && screen.orientation.lock) {
         try {
-          var q = screen.orientation.lock('landscape');
+          var q = screen.orientation.lock('portrait');
           if (q && q.catch) q.catch(function () {});
         } catch (err) { /* desktop and iOS both refuse */ }
       }

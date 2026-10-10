@@ -1,10 +1,18 @@
-// Exercises the tap/hold -> key translation in web/shell.html without a
-// browser, by loading the generated page's inline script against a minimal DOM
-// stub and driving synthetic touch events at it.
+// Exercises the input bridge in web/shell.html without a browser, by loading
+// the generated page's inline script against a minimal DOM stub and driving
+// synthetic events at it.
 //
-// This exists because the touch bridge cannot be checked by reading the code:
-// the whole behaviour is a timer, and getting it wrong gives either no push or
-// a brace key that stays stuck down. Run it against a *built* page:
+// Two behaviours are covered, neither of which can be checked by reading the
+// code:
+//
+//   touch  a tap becomes SPACE and a press-and-hold becomes SHIFT. The whole
+//          thing is a timer, and getting it wrong gives either no push or a
+//          brace key that stays stuck down.
+//   mouse  a button released OUTSIDE the canvas is re-dispatched to it. The
+//          engine polls the button every frame, so a release it never sees
+//          leaves the brace on for ever.
+//
+// Run it against a *built* page:
 //
 //     node web/test_touch.js build-web/cashyphus.html
 //
@@ -69,6 +77,14 @@ global.KeyboardEvent = class {
   constructor(type, init) { this.type = type; Object.assign(this, init); }
 };
 
+// The mouse safety net needs a canvas that can receive events, and a MouseEvent
+// to hand to it, so both must exist before the shell script registers anything.
+els.canvas.dispatched = [];
+els.canvas.dispatchEvent = function (ev) { els.canvas.dispatched.push(ev); return true; };
+global.MouseEvent = class {
+  constructor(type, init) { this.type = type; Object.assign(this, init); }
+};
+
 vm.runInThisContext(blocks[0], { filename: 'shell-inline.js' });
 
 // --- driving ---------------------------------------------------------------
@@ -80,6 +96,13 @@ function fire(type, id) {
   for (const f of docListeners[type] || []) {
     f({ preventDefault() {}, changedTouches: [{ identifier: id }] });
   }
+}
+
+// Same, for the plain DOM events the mouse bridge listens for.
+function fireDom(type, ev) {
+  const fns = docListeners[type] || [];
+  for (const f of fns) f(ev);
+  return fns.length;
 }
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -120,5 +143,29 @@ function check(label, got, want) {
   check('cancel -> brace released',
         sent, ['keydown:ShiftLeft', 'keyup:ShiftLeft']);
 
-  console.log(process.exitCode ? '\ntouch bridge: FAILED' : '\ntouch bridge: all good');
+  // --- mouse: a release outside the canvas still has to reach the engine ----
+  els.canvas.dispatched.length = 0;
+  const bar = makeEl('letterbox');
+  fireDom('mouseup', { target: bar, button: 2, buttons: 0, clientX: 7, clientY: 8 });
+  check('release off-canvas is re-dispatched',
+        els.canvas.dispatched.map((e) => `${e.type}:${e.button}`), ['mouseup:2']);
+
+  els.canvas.dispatched.length = 0;
+  fireDom('mouseup', { target: els.canvas, button: 2, buttons: 0 });
+  check('release on-canvas is not duplicated',
+        els.canvas.dispatched.map((e) => `${e.type}:${e.button}`), []);
+
+  // --- mouse: the browser menu must not interrupt a held right-click --------
+  let prevented = 0;
+  const ctx = { preventDefault() { ++prevented; } };
+  fireDom('contextmenu', ctx);
+  check('context menu suppressed during play', prevented, 1);
+
+  els.panel.classList.remove('hidden');          // loading / failure panel
+  prevented = 0;
+  fireDom('contextmenu', ctx);
+  check('context menu left alone on the panel', prevented, 0);
+  els.panel.classList.add('hidden');
+
+  console.log(process.exitCode ? '\ninput bridge: FAILED' : '\ninput bridge: all good');
 })();

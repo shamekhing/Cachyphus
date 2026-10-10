@@ -29,12 +29,22 @@ using namespace cashyphus::cfg;
 namespace {
 
 // --- input -------------------------------------------------------------------
+// Two verbs, and on a desktop two mouse buttons: LEFT-CLICK pushes, a held
+// RIGHT-CLICK braces -- which is also how the choice screen is answered
+// (left-click keeps pushing, right-click walks away). SPACE/UP and SHIFT/DOWN
+// stay mapped so the keyboard still works on its own.
+//
+// Touch is not handled here: web/shell.html turns a tap into SPACE and a
+// press-and-hold into SHIFT, so a phone reaches exactly these same two verbs
+// through the same code path rather than a third one.
 Input readInput() {
     Input in;
     in.pushPressed  = IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_UP) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
     in.pushHeld     = IsKeyDown(KEY_SPACE)    || IsKeyDown(KEY_UP)    || IsMouseButtonDown(MOUSE_BUTTON_LEFT);
-    in.bracePressed = IsKeyPressed(KEY_LEFT_SHIFT) || IsKeyPressed(KEY_RIGHT_SHIFT) || IsKeyPressed(KEY_DOWN);
-    in.braceHeld    = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) || IsKeyDown(KEY_DOWN);
+    in.bracePressed = IsKeyPressed(KEY_LEFT_SHIFT) || IsKeyPressed(KEY_RIGHT_SHIFT) ||
+                      IsKeyPressed(KEY_DOWN) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
+    in.braceHeld    = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) ||
+                      IsKeyDown(KEY_DOWN) || IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
     in.anyPressed   = in.pushPressed || in.bracePressed;
     return in;
 }
@@ -319,8 +329,25 @@ int main(int argc, char** argv) {
     int flags = FLAG_WINDOW_RESIZABLE;
     if (!a.opts.capture) flags |= FLAG_VSYNC_HINT;
     SetConfigFlags(flags);
+
+#if defined(__EMSCRIPTEN__)
+    // On the web the canvas is sized by CSS, so the backing resolution is raised
+    // instead: 3x stays crisp when the letterbox scales it up on a phone.
     InitWindow(VIRTUAL_W * 3, VIRTUAL_H * 3, "CASHYPHUS");
-    SetWindowMinSize(VIRTUAL_W * 2, VIRTUAL_H * 2);
+#else
+    // On the desktop the window itself has to fit the display. A hard-coded 3x
+    // is 540x1080 -- exactly the height of a 1080p screen -- so the title bar
+    // and the dock get pushed off the bottom and the first thing a PC player
+    // sees is a window that does not fit their monitor. Open at 2x, then grow
+    // to the largest integer scale the screen can actually hold, keeping 96px
+    // of headroom for a title bar and a taskbar.
+    InitWindow(VIRTUAL_W * 2, VIRTUAL_H * 2, "CASHYPHUS");
+    int scale = 3;
+    const int room = GetMonitorHeight(GetCurrentMonitor()) - 96;
+    while (scale > 1 && VIRTUAL_H * scale > room) --scale;
+    SetWindowSize(VIRTUAL_W * scale, VIRTUAL_H * scale);
+    SetWindowMinSize(VIRTUAL_W, VIRTUAL_H);   // 1x, so every display can shrink it
+#endif
     SetTargetFPS(a.opts.capture ? 0 : 60);
 
     // The whole UI draws with a real 8px bitmap face instead of raylib's

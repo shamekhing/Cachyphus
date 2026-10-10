@@ -94,7 +94,7 @@ case "$CMD" in
       echo "run.sh: build/$PRESET/cashyphus is missing" >&2
       exit 1
     fi
-    echo "==> launching (SPACE push, SHIFT brace, F fullscreen)"
+    echo "==> launching (left-click push, hold right-click brace; SPACE/SHIFT keys)"
     exec "build/$PRESET/cashyphus"
     ;;
 esac

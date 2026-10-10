@@ -78,12 +78,13 @@ void drawTitle(const Palette& pal) {
     const Color txt  = toColor(pal.uiText);
 
     txt::drawCenter("CASHYPHUS", 58, txt::SIZE_MEDIUM, gold);
-    txt::drawCenter("One hill. One lifetime.", 100, txt::SIZE_SMALL, txt);
-    txt::drawCenter("One more push.", 112, txt::SIZE_SMALL, dim);
+    txt::drawCenter("One hill.", 94, txt::SIZE_SMALL, txt);
+    txt::drawCenter("One lifetime.", 106, txt::SIZE_SMALL, txt);
+    txt::drawCenter("One more push.", 118, txt::SIZE_SMALL, dim);
 
     if (static_cast<int>(GetTime() * 2.0f) % 2 == 0) {
         txt::drawCenter("PRESS SPACE", 148, txt::SIZE_SMALL, txt);
-        txt::drawCenter("OR TAP", 160, txt::SIZE_SMALL, txt);
+        txt::drawCenter("OR TAP / CLICK", 160, txt::SIZE_SMALL, txt);
     }
 }
 
@@ -98,10 +99,10 @@ void drawChoice(const Palette& pal) {
     DrawRectangle(x + 8, y + 20, w - 16, 1, toColor(pal.uiDim));
 
     txt::drawCenter("KEEP PUSHING", y + 26, txt::SIZE_SMALL, toColor(pal.uiWarn));
-    txt::drawCenter("[SPACE]", y + 38, txt::SIZE_SMALL, txt);
+    txt::drawCenter("[SPACE or CLICK]", y + 38, txt::SIZE_SMALL, txt);
 
     txt::drawCenter("WALK AWAY", y + 54, txt::SIZE_SMALL, toColor(pal.uiGood));
-    txt::drawCenter("[SHIFT]", y + 66, txt::SIZE_SMALL, txt);
+    txt::drawCenter("[SHIFT or R-CLICK]", y + 66, txt::SIZE_SMALL, txt);
 }
 
 void drawWalkAwayText(const Game& g, const Palette& pal) {
@@ -109,7 +110,7 @@ void drawWalkAwayText(const Game& g, const Palette& pal) {
         DrawRectangle(0, 146, VIRTUAL_W, 26, Color{ 12, 10, 16, 150 });
         const Color ink = toColor(pal.uiText);
         txt::drawCenter("You cannot buy back", 150, txt::SIZE_SMALL, ink);
-        txt::drawCenter("the time you never spent.", 161, txt::SIZE_SMALL, ink);
+        txt::drawCenter("time you never spent.", 161, txt::SIZE_SMALL, ink);
     }
 }
 
@@ -118,15 +119,21 @@ void drawCredits(const Game& g, const Palette& pal) {
     const Color txt = toColor(pal.uiText);
     const Color dim = toColor(pal.uiDim);
 
-    txt::drawCenter("You can leave the hill.", 90, txt::SIZE_SMALL, txt);
-    txt::drawCenter("But the hill will always", 106, txt::SIZE_SMALL, txt);
-    txt::drawCenter("find someone willing to climb.", 118, txt::SIZE_SMALL, txt);
+    // The frame is 180px and the baked face advances 8px per character, so a
+    // line is 22 characters at the most. Anything longer is silently clipped by
+    // the render target on BOTH sides -- which is how the ending screen used to
+    // lose the first and last few letters of every sentence.
+    txt::drawCenter("You can leave.", 84, txt::SIZE_SMALL, txt);
+    txt::drawCenter("But the hill will", 96, txt::SIZE_SMALL, txt);
+    txt::drawCenter("always find someone", 108, txt::SIZE_SMALL, txt);
+    txt::drawCenter("willing to climb.", 120, txt::SIZE_SMALL, txt);
 
     char buf[64];
     std::snprintf(buf, sizeof(buf), "lives spent: %d", g.completedLives());
     txt::drawCenter(buf, 156, txt::SIZE_SMALL, dim);
-    std::snprintf(buf, sizeof(buf), "times you kept pushing: %d", g.timesContinued());
-    txt::drawCenter(buf, 170, txt::SIZE_SMALL, dim);
+    txt::drawCenter("times you kept", 170, txt::SIZE_SMALL, dim);
+    std::snprintf(buf, sizeof(buf), "pushing: %d", g.timesContinued());
+    txt::drawCenter(buf, 182, txt::SIZE_SMALL, dim);
 
     if (static_cast<int>(GetTime() * 2.0f) % 2 == 0) {
         txt::drawCenter("PRESS SPACE", 212, txt::SIZE_SMALL, toColor(pal.ballBand));
