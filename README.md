@@ -275,13 +275,16 @@ first step toward the ending where you simply walk away.
 
 **Rendering** draws everything into a portrait render target with point filtering
 and blits it to the window at a whole-number scale. The target is not fixed at
-180x360: `cfg::frameFor()` picks the largest integer scale the display can hold
-and grows the frame to the display at that scale, so a 2.16:1 phone gets a 195x422
-frame drawn at 2x which fills the screen edge to edge, instead of a letterboxed
-strip with 15% of the picture thrown away. The art is laid out in the 180x360
-design frame and translated down by the extra height, so a taller frame is more
-sky above an unchanged scene -- nothing is stretched, nothing is cropped, and a
-landscape monitor keeps the design width and gives up only the sides.
+180x360: `cfg::frameFor()` takes the largest integer scale that still leaves a
+portrait frame at least as wide as the art was drawn for, and then *derives* the
+frame from it -- so the frame eats the whole display rather than leaving a margin
+around a fixed one. A phone gets 195x422 at 2x, which is its entire 390x844 screen
+with no padding at all, and it stays that way whatever the browser chrome is doing
+to the viewport height; the same rule fills a 360x640 phone (180x320 at 2x) and a
+tablet. The art is laid out in the 180x360 design frame and translated down by the
+extra height, so a taller frame is more sky above an unchanged scene -- nothing is
+stretched and nothing is cropped. Only a landscape monitor gives up anything, and
+only the sides, because a hill needs somewhere to climb.
 
 **Audio** is two things. The music is one real CC0 chiptune -- MintoDog's *Amusement park Stage*, credited in `assets/CREDITS.md` -- baked into the binary as a sample table and worn down as lifetimes pile up: a low-pass first, then sample-and-hold, then quantisation, then a little detune, all from the curve in `src/core/music.hpp`, so the tune stays recognisable however far the ball has got. The effects are the other thing: edited CC0 coin, banknote, paper and casino recordings from `assets/audio`, cached in a three-voice pool each so a player who mashes the push key overlaps coin tails rather than cutting them off, plus the natural bed that takes over when the player walks away. The main loop routes effects from accepted simulation events, crossfades the beds, and applies master, music, effects, dialogue, and ambience gains. M toggles mute and bracket keys adjust master volume. A missing or undecodable recording falls back to one of the nine procedural voices in `src/audio/voices.hpp` instead of to silence, and if the machine has no audio device at all the game still plays.
 

@@ -956,17 +956,23 @@ static void test_audio_voices() {
 static void test_frame_fit() {
     section("layout: the frame fills the display");
 
-    // Phones: the frame must fill the screen exactly, with no padding at all.
+    // Phones and tablets: the frame must fill the display both ways, with no
+    // padding at all -- and that has to hold whatever browser chrome is showing,
+    // because a short viewport is what dropped the scale and used to leave 87px
+    // down each side of a 390-wide phone.
     const struct { int w, h; } phones[] = {
         { 1170, 2532 }, { 1080, 2400 }, { 720, 1560 }, { 1440, 3120 },
+        { 390, 700 }, { 360, 640 }, { 744, 1133 }, { 320, 568 }, { 412, 915 },
     };
     for (const auto& s : phones) {
         const FrameFit f = frameFor(s.w, s.h);
-        CHECK(f.width * f.scale == s.w);
-        CHECK(f.height * f.scale == s.h);
-        CHECK(f.width >= DESIGN_W && f.height >= DESIGN_H);   // never smaller than the art
-        CHECK(f.height > f.width);                            // never landscape
-        CHECK(f.width <= DESIGN_W * 6 / 5);                   // never too wide for the layout
+        // The scale is a whole number, so what is drawn is the screen minus at most
+        // one pixel per edge of leftover: nothing measurable is given away.
+        CHECK(s.w - f.width * f.scale < f.scale);
+        CHECK(s.h - f.height * f.scale < f.scale);
+        CHECK(f.width >= DESIGN_W);                  // never narrower than the art
+        CHECK(f.height >= DESIGN_H * 82 / 100);      // ...and tall enough for the summit
+        CHECK(f.height >= f.width);                  // never landscape
     }
 
     // Desktop monitors: a portrait playfield cannot fill a 16:9 screen, so the sides

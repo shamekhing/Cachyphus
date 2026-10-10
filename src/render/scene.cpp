@@ -83,8 +83,11 @@ void drawSky(const Palette& pal) {
 
 void drawSun(const Palette& pal) {
     const Color c = toColor(pal.sun);
-    DrawCircle(142, 44, 11, c);
-    DrawCircle(142, 44, 7, Color{ c.r, c.g, c.b, 200 });
+    // Pinned near the right edge rather than at x=142, so it stays in the sky
+    // however wide the display grew the frame (142 was 180 - 38).
+    const int sx = VIRTUAL_W - 38;
+    DrawCircle(sx, 44, 11, c);
+    DrawCircle(sx, 44, 7, Color{ c.r, c.g, c.b, 200 });
 }
 
 // -----------------------------------------------------------------------------
@@ -142,17 +145,18 @@ void drawParallax(const Palette& pal, float rise) {
 
     const float sink = rise * 150.0f;
 
+    // Both rows run to the right edge of the frame rather than stopping after a
+    // fixed number of peaks: the frame is as wide as the display needs now, and a
+    // range that ran out part-way would leave a bare horizon on a tablet.
     const float h1 = 172.0f + sink;
-    for (int i = -1; i < 5; ++i) {
-        const float bx = static_cast<float>(i * 76) - 34.0f;
+    for (float bx = -34.0f; bx < static_cast<float>(VIRTUAL_W) + 40.0f; bx += 76.0f) {
         DrawTriangle({ bx,         h1 },
                      { bx + 38.0f, h1 - 48.0f },
                      { bx + 76.0f, h1 }, far);
     }
 
     const float h2 = 216.0f + sink;
-    for (int i = -1; i < 6; ++i) {
-        const float bx = static_cast<float>(i * 58) - 22.0f;
+    for (float bx = -22.0f; bx < static_cast<float>(VIRTUAL_W) + 36.0f; bx += 58.0f) {
         DrawTriangle({ bx,         h2 },
                      { bx + 29.0f, h2 - 42.0f },
                      { bx + 58.0f, h2 }, near);

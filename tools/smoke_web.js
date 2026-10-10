@@ -171,7 +171,11 @@ function fail(msg) { console.error('smoke FAIL: ' + msg); process.exit(1); }
     if (!hits.length) fail(`the game never reported a frame (${tag})`);
     const [, fw, fh, k, dw, dh] = hits[hits.length - 1].map(Number);
     console.log(`smoke: ${tag} draws a ${fw}x${fh} frame at ${k}x in a ${dw}x${dh} display`);
-    if (fw < 180 || fh < 360) fail(`frame is smaller than the art it was drawn for (${tag}: ${fw}x${fh})`);
+    // The art needs a frame at least as wide as the design and tall enough for the
+    // summit: 82% of the design height, the same floor cfg::frameFor() uses.
+    if (fw < 180 || fh < Math.floor(360 * 82 / 100)) {
+      fail(`frame is smaller than the art it was drawn for (${tag}: ${fw}x${fh})`);
+    }
     if (fh <= fw) fail(`frame came out landscape, which the hill cannot climb (${tag}: ${fw}x${fh})`);
     // The height is always taken in full, to within the leftover an integer scale
     // cannot use. The width too, but only where the display is portrait: a phone.

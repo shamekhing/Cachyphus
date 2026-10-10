@@ -44,32 +44,47 @@ struct FrameFit {
     int height = DESIGN_H;
 };
 
-// The frame that fills as much of a screenW x screenH display as a portrait 1:2
-// playfield can, at a whole-number pixel scale, without cropping or stretching.
+// The frame that fills a screenW x screenH display, at a whole-number pixel scale,
+// without cropping or stretching.
+//
+// The rule: take the LARGEST scale that still leaves a portrait frame at least as
+// wide as the art was drawn for, and tall enough to hold the summit with sky above
+// it. The frame is then whatever is left after multiplying the screen by that
+// scale, so it eats the whole display -- there is no padding anywhere, on any
+// phone, at any browser-chrome height. Choosing the scale first and deriving the
+// frame from it is the whole trick: a fixed frame cannot fill a display that is a
+// different shape from it, and padding the difference is what left 87px down each
+// side of a phone with the URL bar showing.
 inline FrameFit frameFor(int screenW, int screenH) {
     FrameFit f;
     if (screenW < 1 || screenH < 1) return f;
 
-    int k = std::min(screenW / DESIGN_W, screenH / DESIGN_H);
-    if (k < 1) k = 1;                       // a display smaller than the design
-    f.scale = k;
+    // Enough height for the hill and a little sky: the summit sits at 80 of the
+    // design's 360, so a frame has to be at least ~295 tall for the whole climb to
+    // stay in view. Narrower than the design width would start clipping overlays.
+    const int minH = DESIGN_H * 82 / 100;
 
-    const int grownW = screenW / k;
-    const int grownH = screenH / k;
-    if (grownW > grownH) {
-        // Landscape display: keep the design width so the hill still climbs, and
-        // take the whole height. The sides are the only thing left over.
+    int best = 0;
+    for (int k = 1; k <= 24; ++k) {
+        const int w = screenW / k, h = screenH / k;
+        if (w < DESIGN_W || h < minH || w > h) continue;   // portrait, art not cramped
+        best = k;                                          // keep the largest that fits
+    }
+
+    if (best == 0) {
+        // Nothing portrait fits: a landscape display, where a hill has nowhere to
+        // climb sideways. Keep the design width and take the whole height instead.
+        int k = screenH / DESIGN_H;
+        if (k < 1) k = 1;
+        f.scale  = k;
         f.width  = DESIGN_W;
-        f.height = grownH > DESIGN_H ? grownH : DESIGN_H;
+        f.height = screenH / k > DESIGN_H ? screenH / k : DESIGN_H;
         return f;
     }
-    // Portrait display: the frame takes the whole screen. The width is capped a
-    // little over the design width because the ball's climb and the summit flag
-    // are laid out across it, and a frame half as wide again would leave the ball
-    // finishing in the middle of the hill.
-    const int maxW = DESIGN_W * 6 / 5;
-    f.width  = grownW < maxW ? grownW : maxW;
-    f.height = grownH;
+
+    f.scale  = best;
+    f.width  = screenW / best;
+    f.height = screenH / best;
     return f;
 }
 
